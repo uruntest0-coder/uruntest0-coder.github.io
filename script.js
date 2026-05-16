@@ -289,9 +289,6 @@
     // 1V1 ARENA
     // ==========================================
     function startArenaMatch(isPrivate, code, isHost) {
-        if (!peer || !supabase) { showToast('MULTIPLAYER LOADING...', 'error'); return; }
-        if (!myPeerId) { showToast('CONNECTING TO SERVER...', 'error'); return; }
-
         navigate('battle');
         resetArenaUI();
 
@@ -301,28 +298,28 @@
                 var localVid = $('arena-local-vid');
                 if(localVid) localVid.srcObject = stream;
 
-                if (isPrivate) {
-                    var eloEl = $('arena-stranger-elo');
-                    if(eloEl) eloEl.innerText = isHost ? 'WAITING FOR FRIEND...' : 'CONNECTING...';
+                // Start AI scan IMMEDIATELY
+                setTimeout(function() { startLiveMogScan(); }, 500);
 
-                    currentPrivateChannel = supabase.channel('room_' + code, { config: { broadcast: { self: false } } });
-                    currentPrivateChannel.on('broadcast', {event: 'join_room'}, function(msg) {
-                        if (isHost) connectToOpponent(msg.payload.peerId);
-                    }).subscribe(function(status) {
-                        if (status === 'SUBSCRIBED' && !isHost) {
-                            currentPrivateChannel.send({type: 'broadcast', event: 'join_room', payload: {peerId: myPeerId}});
-                        }
-                    });
-                } else {
-                    isSearching = true;
-                    var eloEl2 = $('arena-stranger-elo');
-                    if(eloEl2) eloEl2.innerText = 'SEARCHING REAL PLAYERS...';
-                    arenaSearchInterval = setInterval(function() {
-                        if(isSearching && arenaChannel) {
-                            arenaChannel.send({ type: 'broadcast', event: 'find_match', payload: { peerId: myPeerId } });
-                        }
-                    }, 2000);
-                    if(arenaChannel) arenaChannel.send({ type: 'broadcast', event: 'find_match', payload: { peerId: myPeerId } });
+                if (peer && supabase && myPeerId) {
+                    if (isPrivate) {
+                        var eloEl = $('arena-stranger-elo');
+                        if(eloEl) eloEl.innerText = isHost ? 'WAITING FOR FRIEND...' : 'CONNECTING...';
+                        currentPrivateChannel = supabase.channel('room_' + code, { config: { broadcast: { self: false } } });
+                        currentPrivateChannel.on('broadcast', {event: 'join_room'}, function(msg) {
+                            if (isHost) connectToOpponent(msg.payload.peerId);
+                        }).subscribe(function(status) {
+                            if (status === 'SUBSCRIBED' && !isHost) {
+                                currentPrivateChannel.send({type: 'broadcast', event: 'join_room', payload: {peerId: myPeerId}});
+                            }
+                        });
+                    } else {
+                        isSearching = true;
+                        arenaSearchInterval = setInterval(function() {
+                            if(isSearching && arenaChannel) arenaChannel.send({ type: 'broadcast', event: 'find_match', payload: { peerId: myPeerId } });
+                        }, 2000);
+                        if(arenaChannel) arenaChannel.send({ type: 'broadcast', event: 'find_match', payload: { peerId: myPeerId } });
+                    }
                 }
             })
             .catch(function(e) {
