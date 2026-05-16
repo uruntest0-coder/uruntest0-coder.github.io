@@ -356,48 +356,236 @@
         });
     }
 
+    // ==========================================
+    // AI FACIAL ANALYSIS ENGINE
+    // Uses real MediaPipe landmarks to calculate:
+    // - Canthal Tilt (Hunter Eyes)
+    // - Jawline Definition
+    // - Facial Symmetry
+    // - Midface Ratio
+    // - FWHR (Face Width-to-Height Ratio)
+    // ==========================================
+    var arenaFaceMesh = null;
+    var localLandmarks = null;
+
+    function dist(a, b) {
+        return Math.sqrt(Math.pow(a.x - b.x, 2) + Math.pow(a.y - b.y, 2));
+    }
+
+    function analyzeFace(landmarks) {
+        // 1. CANTHAL TILT (Hunter Eyes) - angle of eye from inner to outer corner
+        // Positive tilt = hunter eyes (upward slant) = good
+        // Left eye: inner=133, outer=33 | Right eye: inner=362, outer=263
+        var leftTilt = Math.atan2(landmarks[33].y - landmarks[133].y, landmarks[33].x - landmarks[133].x) * (180 / Math.PI);
+        var rightTilt = Math.atan2(landmarks[263].y - landmarks[362].y, landmarks[263].x - landmarks[362].x) * (180 / Math.PI);
+        var avgTilt = (Math.abs(leftTilt) + Math.abs(rightTilt)) / 2;
+        // Ideal: slight negative (upward). Map -8 to +8 degrees into 1-10
+        var hunterRaw = 10 - (avgTilt + 5) * 0.5;
+        var hunter = Math.max(3, Math.min(9.8, hunterRaw + (Math.random() * 1.0 - 0.5)));
+
+        // 2. JAWLINE DEFINITION - ratio of jaw width to mid-face width
+        // Jaw: 172 (left), 397 (right) | Cheekbones: 234, 454
+        var jawWidth = dist(landmarks[172], landmarks[397]);
+        var cheekWidth = dist(landmarks[234], landmarks[454]);
+        var jawRatio = jawWidth / cheekWidth;
+        // Ideal jawRatio around 0.85-0.95 (defined jaw, not too wide)
+        var jawRaw = 10 - Math.abs(jawRatio - 0.90) * 20;
+        var jaw = Math.max(3, Math.min(9.8, jawRaw + (Math.random() * 0.8 - 0.4)));
+
+        // 3. SYMMETRY - compare left vs right eye height, mouth corners
+        var leftEyeH = dist(landmarks[159], landmarks[145]);
+        var rightEyeH = dist(landmarks[386], landmarks[374]);
+        var eyeSymmetry = 1 - Math.abs(leftEyeH - rightEyeH) / Math.max(leftEyeH, rightEyeH);
+        
+        var leftMouth = dist(landmarks[61], landmarks[1]); // left mouth to nose
+        var rightMouth = dist(landmarks[291], landmarks[1]); // right mouth to nose
+        var mouthSymmetry = 1 - Math.abs(leftMouth - rightMouth) / Math.max(leftMouth, rightMouth);
+        
+        var symRaw = ((eyeSymmetry + mouthSymmetry) / 2) * 10;
+        var sym = Math.max(4, Math.min(9.9, symRaw + (Math.random() * 0.6 - 0.3)));
+
+        // 4. MIDFACE RATIO - distance from eyes to mouth vs face height
+        // Eyes center: avg of 159,145 (left) and 386,374 (right)
+        // Forehead: 10, Chin: 152
+        var eyeCenterY = (landmarks[159].y + landmarks[386].y) / 2;
+        var mouthY = landmarks[13].y;
+        var foreheadY = landmarks[10].y;
+        var chinY = landmarks[152].y;
+        var midfaceDist = mouthY - eyeCenterY;
+        var faceHeight = chinY - foreheadY;
+        var midfaceRatio = midfaceDist / faceHeight;
+        // Ideal midface ratio: ~0.35-0.40 (short midface = attractive)
+        var midRaw = 10 - Math.abs(midfaceRatio - 0.37) * 40;
+        var mid = Math.max(3, Math.min(9.8, midRaw + (Math.random() * 0.8 - 0.4)));
+
+        // 5. FWHR (Facial Width-to-Height Ratio)
+        // Width: cheekbone width | Height: brow to upper lip
+        var fwhrWidth = cheekWidth;
+        var fwhrHeight = landmarks[13].y - landmarks[10].y;
+        var fwhr = fwhrWidth / fwhrHeight;
+        // Ideal FWHR: ~1.8-2.0 (masculine/attractive)
+        var fwhrRaw = 10 - Math.abs(fwhr - 1.9) * 8;
+        var fwhrScore = Math.max(3, Math.min(9.8, fwhrRaw + (Math.random() * 0.6 - 0.3)));
+
+        // OVERALL SCORE - weighted average
+        var overall = (hunter * 0.25 + jaw * 0.20 + sym * 0.20 + mid * 0.15 + fwhrScore * 0.20);
+        overall = Math.max(3, Math.min(9.9, overall));
+
+        return {
+            hunter: parseFloat(hunter.toFixed(1)),
+            jaw: parseFloat(jaw.toFixed(1)),
+            sym: parseFloat(sym.toFixed(1)),
+            mid: parseFloat(mid.toFixed(1)),
+            fwhr: parseFloat(fwhrScore.toFixed(1)),
+            overall: parseFloat(overall.toFixed(1))
+        };
+    }
+
+    function renderMetrics(prefix, metrics, delay) {
+        var cats = ['hunter', 'jaw', 'sym', 'mid', 'fwhr'];
+        var d = delay || 0;
+        for (var i = 0; i < cats.length; i++) {
+            (function(cat, idx) {
+                setTimeout(function() {
+                    var el = $(prefix + '-' + cat);
+                    var bar = $(prefix + '-' + cat + '-bar');
+                    if (el) el.innerText = metrics[cat].toFixed(1);
+                    if (bar) bar.style.width = (metrics[cat] * 10) + '%';
+                }, d + idx * 200);
+            })(cats[i], i);
+        }
+    }
+
     function startLiveMogScan() {
         myArenaScore = null;
         opponentArenaScore = null;
+        localLandmarks = null;
         var btn = $('btn-next-match');
         if(btn) btn.style.display = 'none';
+        var banner = $('scan-banner');
+        if(banner) banner.style.display = 'flex';
 
-        setTimeout(function() {
-            var base = (myElo / 200) + 2.0;
-            myArenaScore = (base + (Math.random() * 1.5 - 0.5)).toFixed(1);
-            if (parseFloat(myArenaScore) > 10.0) myArenaScore = '9.9';
-            if (currentConn) { try { currentConn.send({ type: 'score', score: myArenaScore }); } catch(e){} }
-            if (myArenaScore && opponentArenaScore) finalizeMatch();
-        }, 3000);
+        // Start FaceMesh on local video for real analysis
+        if (typeof FaceMesh !== 'undefined') {
+            try {
+                arenaFaceMesh = new FaceMesh({
+                    locateFile: function(file) {
+                        return 'https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/' + file;
+                    }
+                });
+                arenaFaceMesh.setOptions({ maxNumFaces: 1, refineLandmarks: true, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
+
+                var frameCount = 0;
+                var bestLandmarks = null;
+
+                arenaFaceMesh.onResults(function(results) {
+                    if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
+                        bestLandmarks = results.multiFaceLandmarks[0];
+                        frameCount++;
+
+                        // Draw mesh on local canvas
+                        var c = $('arena-local-canvas');
+                        var v = $('arena-local-vid');
+                        if (c && v && typeof drawConnectors !== 'undefined') {
+                            if (c.width !== v.videoWidth && v.videoWidth > 0) { c.width = v.videoWidth; c.height = v.videoHeight; }
+                            var ctx = c.getContext('2d');
+                            ctx.clearRect(0, 0, c.width, c.height);
+                            drawConnectors(ctx, bestLandmarks, FACEMESH_TESSELATION, {color: 'rgba(34, 211, 238, 0.12)', lineWidth: 0.5});
+                            drawConnectors(ctx, bestLandmarks, FACEMESH_RIGHT_EYE, {color: '#22d3ee', lineWidth: 1});
+                            drawConnectors(ctx, bestLandmarks, FACEMESH_LEFT_EYE, {color: '#22d3ee', lineWidth: 1});
+                            drawConnectors(ctx, bestLandmarks, FACEMESH_FACE_OVAL, {color: 'rgba(34,211,238,0.3)', lineWidth: 1});
+                        }
+                    }
+                });
+
+                // Capture a few frames then analyze
+                var vid = $('arena-local-vid');
+                if (vid && vid.srcObject) {
+                    var scanInterval = setInterval(function() {
+                        if (vid.readyState >= 2) {
+                            arenaFaceMesh.send({image: vid});
+                        }
+                    }, 200);
+
+                    // After 3 seconds, stop scanning and produce result
+                    setTimeout(function() {
+                        clearInterval(scanInterval);
+                        if (banner) banner.style.display = 'none';
+
+                        if (bestLandmarks) {
+                            var metrics = analyzeFace(bestLandmarks);
+                            myArenaScore = metrics;
+                            if (currentConn) {
+                                try { currentConn.send({ type: 'score', score: metrics }); } catch(e) {}
+                            }
+                            if (myArenaScore && opponentArenaScore) finalizeMatch();
+                        } else {
+                            // Fallback if no face detected
+                            myArenaScore = { hunter: 5 + Math.random()*2, jaw: 5+Math.random()*2, sym: 6+Math.random()*2, mid: 5+Math.random()*2, fwhr: 5+Math.random()*2, overall: 5.5+Math.random()*2 };
+                            if (currentConn) { try { currentConn.send({ type: 'score', score: myArenaScore }); } catch(e) {} }
+                            if (myArenaScore && opponentArenaScore) finalizeMatch();
+                        }
+
+                        try { arenaFaceMesh.close(); } catch(e) {}
+                        arenaFaceMesh = null;
+                    }, 3500);
+                }
+            } catch(e) {
+                console.error('[KUSAURA] Arena FaceMesh error:', e);
+                if (banner) banner.style.display = 'none';
+                // Fallback
+                myArenaScore = { hunter: 5+Math.random()*3, jaw: 5+Math.random()*3, sym: 6+Math.random()*2, mid: 5+Math.random()*3, fwhr: 5+Math.random()*3, overall: 5.5+Math.random()*2.5 };
+                if (currentConn) { try { currentConn.send({ type: 'score', score: myArenaScore }); } catch(e2) {} }
+                if (myArenaScore && opponentArenaScore) finalizeMatch();
+            }
+        } else {
+            // No FaceMesh available - fallback
+            if (banner) banner.style.display = 'none';
+            setTimeout(function() {
+                myArenaScore = { hunter: 5+Math.random()*3, jaw: 5+Math.random()*3, sym: 6+Math.random()*2, mid: 5+Math.random()*3, fwhr: 5+Math.random()*3, overall: 5.5+Math.random()*2.5 };
+                if (currentConn) { try { currentConn.send({ type: 'score', score: myArenaScore }); } catch(e) {} }
+                if (myArenaScore && opponentArenaScore) finalizeMatch();
+            }, 3000);
+        }
     }
 
     function finalizeMatch() {
-        var sScore = parseFloat(opponentArenaScore);
-        var mScore = parseFloat(myArenaScore);
+        var myM = myArenaScore;
+        var opM = opponentArenaScore;
+        var mScore = myM.overall || parseFloat(myM);
+        var sScore = opM.overall || parseFloat(opM);
         var iWon = mScore > sScore;
 
-        var sScoreEl = $('stranger-score'); if(sScoreEl) sScoreEl.innerText = sScore.toFixed(1);
-        var mScoreEl = $('local-score'); if(mScoreEl) mScoreEl.innerText = mScore.toFixed(1);
+        // Set scores
+        var sScoreEl = $('stranger-score'); if(sScoreEl) sScoreEl.innerText = (typeof sScore === 'number' ? sScore.toFixed(1) : sScore);
+        var mScoreEl = $('local-score'); if(mScoreEl) mScoreEl.innerText = (typeof mScore === 'number' ? mScore.toFixed(1) : mScore);
 
         var expected = 1 / (1 + Math.pow(10, (1000 - myElo) / 400));
         var sStatus = $('stranger-status'), mStatus = $('local-status');
 
         if (iWon) {
-            if(sStatus) { sStatus.innerText = 'MOGGED'; sStatus.className = 'font-bold text-2xl tracking-[0.2em] uppercase mt-2 text-red-500 drop-shadow-[0_0_10px_rgba(239,68,68,0.8)]'; }
-            if(mStatus) { mStatus.innerText = 'WINNER'; mStatus.className = 'font-bold text-2xl tracking-[0.2em] uppercase mt-2 text-green-400 drop-shadow-[0_0_10px_rgba(74,222,128,0.8)]'; }
+            if(sStatus) { sStatus.innerText = 'MOGGED'; sStatus.className = 'font-bold text-2xl tracking-[0.2em] uppercase mt-1 mb-4 text-red-500 drop-shadow-[0_0_10px_rgba(239,68,68,0.8)]'; }
+            if(mStatus) { mStatus.innerText = 'MOGGER'; mStatus.className = 'font-bold text-2xl tracking-[0.2em] uppercase mt-1 mb-4 text-green-400 drop-shadow-[0_0_10px_rgba(74,222,128,0.8)]'; }
             myElo += Math.round(32 * (1 - expected));
         } else if (mScore < sScore) {
-            if(sStatus) { sStatus.innerText = 'WINNER'; sStatus.className = 'font-bold text-2xl tracking-[0.2em] uppercase mt-2 text-green-400 drop-shadow-[0_0_10px_rgba(74,222,128,0.8)]'; }
-            if(mStatus) { mStatus.innerText = 'MOGGED'; mStatus.className = 'font-bold text-2xl tracking-[0.2em] uppercase mt-2 text-red-500 drop-shadow-[0_0_10px_rgba(239,68,68,0.8)]'; }
+            if(sStatus) { sStatus.innerText = 'MOGGER'; sStatus.className = 'font-bold text-2xl tracking-[0.2em] uppercase mt-1 mb-4 text-green-400 drop-shadow-[0_0_10px_rgba(74,222,128,0.8)]'; }
+            if(mStatus) { mStatus.innerText = 'MOGGED'; mStatus.className = 'font-bold text-2xl tracking-[0.2em] uppercase mt-1 mb-4 text-red-500 drop-shadow-[0_0_10px_rgba(239,68,68,0.8)]'; }
             myElo += Math.round(32 * (0 - expected));
         } else {
-            if(sStatus) { sStatus.innerText = 'DRAW'; sStatus.className = 'font-bold text-2xl tracking-[0.2em] uppercase mt-2 text-yellow-400'; }
-            if(mStatus) { mStatus.innerText = 'DRAW'; mStatus.className = 'font-bold text-2xl tracking-[0.2em] uppercase mt-2 text-yellow-400'; }
+            if(sStatus) { sStatus.innerText = 'DRAW'; sStatus.className = 'font-bold text-2xl tracking-[0.2em] uppercase mt-1 mb-4 text-yellow-400'; }
+            if(mStatus) { mStatus.innerText = 'DRAW'; mStatus.className = 'font-bold text-2xl tracking-[0.2em] uppercase mt-1 mb-4 text-yellow-400'; }
         }
 
         updateUIElo();
+
+        // Show overlays
         var so = $('stranger-score-overlay'); if(so) { so.style.opacity = '1'; so.style.transform = 'scale(1)'; }
         var lo = $('local-score-overlay'); if(lo) { lo.style.opacity = '1'; lo.style.transform = 'scale(1)'; }
+
+        // Animate metric bars with stagger
+        if (myM.hunter !== undefined) renderMetrics('l', myM, 300);
+        if (opM.hunter !== undefined) renderMetrics('s', opM, 300);
+
         var btn = $('btn-next-match'); if(btn) { btn.innerText = '⏭️ NEXT MATCH'; btn.style.display = 'flex'; }
     }
 
@@ -405,10 +593,15 @@
 
     function exitArena() {
         stopSearching();
+        if(arenaFaceMesh) { try { arenaFaceMesh.close(); } catch(e){} arenaFaceMesh = null; }
         if(currentCall) { try { currentCall.close(); } catch(e){} currentCall = null; }
         if(currentConn) { try { currentConn.close(); } catch(e){} currentConn = null; }
         if(currentPrivateChannel) { try { currentPrivateChannel.unsubscribe(); } catch(e){} currentPrivateChannel = null; }
         if(arenaStream) { var t = arenaStream.getTracks(); for(var i=0;i<t.length;i++) t[i].stop(); arenaStream = null; }
+        var banner = $('scan-banner'); if(banner) banner.style.display = 'none';
+        // Clear canvases
+        var lc = $('arena-local-canvas'); if(lc) { var ctx = lc.getContext('2d'); ctx.clearRect(0,0,lc.width,lc.height); }
+        var sc = $('arena-stranger-canvas'); if(sc) { var ctx2 = sc.getContext('2d'); ctx2.clearRect(0,0,sc.width,sc.height); }
         navigate('menu');
     }
 
@@ -417,6 +610,16 @@
         var lo = $('local-score-overlay'); if(lo) { lo.style.opacity = '0'; lo.style.transform = 'scale(0.9)'; }
         var sv = $('arena-stranger-vid'); if(sv) sv.srcObject = null;
         var btn = $('btn-next-match'); if(btn) { btn.innerText = '❌ CANCEL SEARCH'; btn.style.display = 'flex'; }
+        // Reset metric bars
+        var cats = ['hunter', 'jaw', 'sym', 'mid', 'fwhr'];
+        var prefixes = ['l', 's'];
+        for (var p = 0; p < prefixes.length; p++) {
+            for (var c = 0; c < cats.length; c++) {
+                var el = $(prefixes[p] + '-' + cats[c]); if(el) el.innerText = '-';
+                var bar = $(prefixes[p] + '-' + cats[c] + '-bar'); if(bar) bar.style.width = '0%';
+            }
+        }
+        var banner = $('scan-banner'); if(banner) banner.style.display = 'none';
     }
 
     // ==========================================

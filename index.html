@@ -212,11 +212,19 @@
 
         <!-- VIEW 4: THE ARENA (LIVE BATTLE) -->
         <div id="view-battle" class="view flex-col w-full h-[calc(100vh-48px)] absolute top-12 left-0 bg-[#050505] z-40 p-2 md:p-4 gap-2">
+            
+            <!-- Scanning Banner -->
+            <div id="scan-banner" class="w-full bg-[#0a0a0a] border border-white/10 rounded-xl px-6 py-3 flex items-center justify-center gap-3 mb-1 hidden">
+                <div class="w-4 h-4 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin"></div>
+                <span class="text-cyan-400 font-logo text-sm uppercase tracking-widest">AI SCANNING FACIAL FEATURES...</span>
+            </div>
+
             <div class="flex flex-col lg:flex-row w-full h-full gap-2 relative">
                 
                 <!-- Left: Stranger Video -->
                 <div class="relative w-full h-1/2 lg:h-full lg:w-1/2 rounded-2xl overflow-hidden border border-white/10 bg-[#0a0a0a] shadow-2xl">
                     <video id="arena-stranger-vid" class="w-full h-full object-cover" autoplay loop muted playsinline></video>
+                    <canvas id="arena-stranger-canvas" class="w-full h-full absolute inset-0 z-5 pointer-events-none"></canvas>
                     <div class="absolute inset-0 bg-gradient-to-b from-black/60 via-transparent to-black/80 pointer-events-none"></div>
                     
                     <div class="absolute top-4 left-4 flex items-center gap-2 bg-black/60 backdrop-blur-md px-4 py-2 rounded-full border border-white/10">
@@ -225,9 +233,22 @@
                         <span id="arena-stranger-elo" class="text-xs text-gray-400 ml-2">ELO: ???</span>
                     </div>
 
-                    <div id="stranger-score-overlay" class="absolute inset-0 flex flex-col items-center justify-center bg-black/50 backdrop-blur-sm opacity-0 scale-90 transition-all duration-500 z-20">
-                        <div id="stranger-score" class="font-logo text-[120px] md:text-[150px] leading-none text-white drop-shadow-[0_0_40px_rgba(255,255,255,0.4)]">0.0</div>
-                        <div id="stranger-status" class="font-bold text-2xl tracking-[0.2em] uppercase mt-2"></div>
+                    <!-- Stranger Score Overlay with AI Breakdown -->
+                    <div id="stranger-score-overlay" class="absolute inset-0 flex flex-col items-center justify-center bg-black/70 backdrop-blur-md opacity-0 scale-90 transition-all duration-500 z-20 p-4">
+                        <div id="stranger-score" class="font-logo text-[80px] md:text-[110px] leading-none text-white drop-shadow-[0_0_40px_rgba(255,255,255,0.4)]">0.0</div>
+                        <div id="stranger-status" class="font-bold text-2xl tracking-[0.2em] uppercase mt-1 mb-4"></div>
+                        <div id="stranger-metrics" class="w-full max-w-[280px] flex flex-col gap-1.5">
+                            <div class="flex justify-between items-center text-xs"><span class="text-gray-400 uppercase tracking-wider">Hunter Eyes</span><span id="s-hunter" class="font-bold text-white">-</span></div>
+                            <div class="w-full h-1 bg-white/10 rounded-full"><div id="s-hunter-bar" class="h-full bg-gradient-to-r from-cyan-400 to-blue-500 rounded-full transition-all duration-700" style="width:0%"></div></div>
+                            <div class="flex justify-between items-center text-xs"><span class="text-gray-400 uppercase tracking-wider">Jawline</span><span id="s-jaw" class="font-bold text-white">-</span></div>
+                            <div class="w-full h-1 bg-white/10 rounded-full"><div id="s-jaw-bar" class="h-full bg-gradient-to-r from-purple-400 to-pink-500 rounded-full transition-all duration-700" style="width:0%"></div></div>
+                            <div class="flex justify-between items-center text-xs"><span class="text-gray-400 uppercase tracking-wider">Symmetry</span><span id="s-sym" class="font-bold text-white">-</span></div>
+                            <div class="w-full h-1 bg-white/10 rounded-full"><div id="s-sym-bar" class="h-full bg-gradient-to-r from-green-400 to-emerald-500 rounded-full transition-all duration-700" style="width:0%"></div></div>
+                            <div class="flex justify-between items-center text-xs"><span class="text-gray-400 uppercase tracking-wider">Midface</span><span id="s-mid" class="font-bold text-white">-</span></div>
+                            <div class="w-full h-1 bg-white/10 rounded-full"><div id="s-mid-bar" class="h-full bg-gradient-to-r from-yellow-400 to-orange-500 rounded-full transition-all duration-700" style="width:0%"></div></div>
+                            <div class="flex justify-between items-center text-xs"><span class="text-gray-400 uppercase tracking-wider">FWHR</span><span id="s-fwhr" class="font-bold text-white">-</span></div>
+                            <div class="w-full h-1 bg-white/10 rounded-full"><div id="s-fwhr-bar" class="h-full bg-gradient-to-r from-red-400 to-rose-500 rounded-full transition-all duration-700" style="width:0%"></div></div>
+                        </div>
                     </div>
                 </div>
 
@@ -239,6 +260,7 @@
                 <!-- Right: Local Video -->
                 <div class="relative w-full h-1/2 lg:h-full lg:w-1/2 rounded-2xl overflow-hidden border border-white/10 bg-[#0a0a0a] shadow-2xl">
                     <video id="arena-local-vid" class="w-full h-full object-cover transform -scale-x-100" autoplay playsinline muted></video>
+                    <canvas id="arena-local-canvas" class="w-full h-full absolute inset-0 transform -scale-x-100 z-5 pointer-events-none"></canvas>
                     
                     <div class="absolute inset-0 bg-gradient-to-b from-black/60 via-transparent to-black/80 pointer-events-none"></div>
                     
@@ -248,9 +270,22 @@
                         <span id="arena-local-elo" class="text-xs text-gray-400 mr-2">ELO: 1000</span>
                     </div>
 
-                    <div id="local-score-overlay" class="absolute inset-0 flex flex-col items-center justify-center bg-black/50 backdrop-blur-sm opacity-0 scale-90 transition-all duration-500 z-20">
-                        <div id="local-score" class="font-logo text-[120px] md:text-[150px] leading-none text-white drop-shadow-[0_0_40px_rgba(255,255,255,0.4)]">0.0</div>
-                        <div id="local-status" class="font-bold text-2xl tracking-[0.2em] uppercase mt-2"></div>
+                    <!-- Local Score Overlay with AI Breakdown -->
+                    <div id="local-score-overlay" class="absolute inset-0 flex flex-col items-center justify-center bg-black/70 backdrop-blur-md opacity-0 scale-90 transition-all duration-500 z-20 p-4">
+                        <div id="local-score" class="font-logo text-[80px] md:text-[110px] leading-none text-white drop-shadow-[0_0_40px_rgba(255,255,255,0.4)]">0.0</div>
+                        <div id="local-status" class="font-bold text-2xl tracking-[0.2em] uppercase mt-1 mb-4"></div>
+                        <div id="local-metrics" class="w-full max-w-[280px] flex flex-col gap-1.5">
+                            <div class="flex justify-between items-center text-xs"><span class="text-gray-400 uppercase tracking-wider">Hunter Eyes</span><span id="l-hunter" class="font-bold text-white">-</span></div>
+                            <div class="w-full h-1 bg-white/10 rounded-full"><div id="l-hunter-bar" class="h-full bg-gradient-to-r from-cyan-400 to-blue-500 rounded-full transition-all duration-700" style="width:0%"></div></div>
+                            <div class="flex justify-between items-center text-xs"><span class="text-gray-400 uppercase tracking-wider">Jawline</span><span id="l-jaw" class="font-bold text-white">-</span></div>
+                            <div class="w-full h-1 bg-white/10 rounded-full"><div id="l-jaw-bar" class="h-full bg-gradient-to-r from-purple-400 to-pink-500 rounded-full transition-all duration-700" style="width:0%"></div></div>
+                            <div class="flex justify-between items-center text-xs"><span class="text-gray-400 uppercase tracking-wider">Symmetry</span><span id="l-sym" class="font-bold text-white">-</span></div>
+                            <div class="w-full h-1 bg-white/10 rounded-full"><div id="l-sym-bar" class="h-full bg-gradient-to-r from-green-400 to-emerald-500 rounded-full transition-all duration-700" style="width:0%"></div></div>
+                            <div class="flex justify-between items-center text-xs"><span class="text-gray-400 uppercase tracking-wider">Midface</span><span id="l-mid" class="font-bold text-white">-</span></div>
+                            <div class="w-full h-1 bg-white/10 rounded-full"><div id="l-mid-bar" class="h-full bg-gradient-to-r from-yellow-400 to-orange-500 rounded-full transition-all duration-700" style="width:0%"></div></div>
+                            <div class="flex justify-between items-center text-xs"><span class="text-gray-400 uppercase tracking-wider">FWHR</span><span id="l-fwhr" class="font-bold text-white">-</span></div>
+                            <div class="w-full h-1 bg-white/10 rounded-full"><div id="l-fwhr-bar" class="h-full bg-gradient-to-r from-red-400 to-rose-500 rounded-full transition-all duration-700" style="width:0%"></div></div>
+                        </div>
                     </div>
                 </div>
             </div>
