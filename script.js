@@ -358,78 +358,116 @@
 
     // ==========================================
     // AI FACIAL ANALYSIS ENGINE
-    // Uses real MediaPipe landmarks to calculate:
-    // - Canthal Tilt (Hunter Eyes)
-    // - Jawline Definition
-    // - Facial Symmetry
-    // - Midface Ratio
-    // - FWHR (Face Width-to-Height Ratio)
+    // Multi-frame averaged, properly calibrated
     // ==========================================
     var arenaFaceMesh = null;
-    var localLandmarks = null;
+    var collectedFrames = [];
 
     function dist(a, b) {
         return Math.sqrt(Math.pow(a.x - b.x, 2) + Math.pow(a.y - b.y, 2));
     }
 
+    // Average multiple landmark frames for stability
+    function averageLandmarks(frames) {
+        if (frames.length === 0) return null;
+        if (frames.length === 1) return frames[0];
+        var avg = [];
+        for (var i = 0; i < frames[0].length; i++) {
+            var sumX = 0, sumY = 0, sumZ = 0;
+            for (var f = 0; f < frames.length; f++) {
+                sumX += frames[f][i].x;
+                sumY += frames[f][i].y;
+                sumZ += (frames[f][i].z || 0);
+            }
+            avg.push({ x: sumX / frames.length, y: sumY / frames.length, z: sumZ / frames.length });
+        }
+        return avg;
+    }
+
+    function clamp(val, min, max) { return Math.max(min, Math.min(max, val)); }
+
     function analyzeFace(landmarks) {
-        // 1. CANTHAL TILT (Hunter Eyes) - angle of eye from inner to outer corner
-        // Positive tilt = hunter eyes (upward slant) = good
-        // Left eye: inner=133, outer=33 | Right eye: inner=362, outer=263
-        var leftTilt = Math.atan2(landmarks[33].y - landmarks[133].y, landmarks[33].x - landmarks[133].x) * (180 / Math.PI);
-        var rightTilt = Math.atan2(landmarks[263].y - landmarks[362].y, landmarks[263].x - landmarks[362].x) * (180 / Math.PI);
-        var avgTilt = (Math.abs(leftTilt) + Math.abs(rightTilt)) / 2;
-        // Ideal: slight negative (upward). Map -8 to +8 degrees into 1-10
-        var hunterRaw = 10 - (avgTilt + 5) * 0.5;
-        var hunter = Math.max(3, Math.min(9.8, hunterRaw + (Math.random() * 1.0 - 0.5)));
+        // All coordinates are normalized 0-1 by MediaPipe
+        // Y axis: 0 = top, 1 = bottom
 
-        // 2. JAWLINE DEFINITION - ratio of jaw width to mid-face width
-        // Jaw: 172 (left), 397 (right) | Cheekbones: 234, 454
-        var jawWidth = dist(landmarks[172], landmarks[397]);
-        var cheekWidth = dist(landmarks[234], landmarks[454]);
-        var jawRatio = jawWidth / cheekWidth;
-        // Ideal jawRatio around 0.85-0.95 (defined jaw, not too wide)
-        var jawRaw = 10 - Math.abs(jawRatio - 0.90) * 20;
-        var jaw = Math.max(3, Math.min(9.8, jawRaw + (Math.random() * 0.8 - 0.4)));
+        // ===== 1. CANTHAL TILT (Hunter Eyes) =====
+        // Positive canthal tilt = outer corner HIGHER than inner = attractive
+        // Left eye: inner corner = 133, outer corner = 33
+        // Right eye: inner corner = 362, outer corner = 263
+        // In normalized coords: higher = smaller Y value
+        var leftTiltDeg = Math.atan2(landmarks[133].y - landmarks[33].y, Math.abs(landmarks[33].x - landmarks[133].x)) * (180 / Math.PI);
+        var rightTiltDeg = Math.atan2(landmarks[362].y - landmarks[263].y, Math.abs(landmarks[263].x - landmarks[362].x)) * (180 / Math.PI);
+        var avgTiltDeg = (leftTiltDeg + rightTiltDeg) / 2;
+        // Typical range: -5 to +10 degrees. Positive = hunter eyes
+        // Map: -5deg -> 4.0, 0deg -> 6.5, +5deg -> 8.5, +10deg -> 9.5
+        var hunter = clamp(6.5 + avgTiltDeg * 0.5, 3.0, 9.9);
 
-        // 3. SYMMETRY - compare left vs right eye height, mouth corners
+        // ===== 2. JAWLINE DEFINITION =====
+        // Compare gonion (jaw angle) width to bizygomatic (cheekbone) width
+        // Jaw angles: 172, 397 | Cheekbones: 234, 454
+        var jawW = dist(landmarks[172], landmarks[397]);
+        var cheekW = dist(landmarks[234], landmarks[454]);
+        var jawRatio = jawW / cheekW;
+        // Good jawline: ratio 0.75-0.85 (jaw narrower than cheeks = defined)
+        // Map: 0.70 -> 9.0, 0.80 -> 8.5, 0.90 -> 7.0, 1.0 -> 5.5
+        var jaw = clamp(12.5 - jawRatio * 5.0, 3.0, 9.9);
+
+        // ===== 3. FACIAL SYMMETRY =====
+        // Compare left/right distances from nose center (landmark 1)
+        var noseTip = landmarks[1];
+        // Eye widths
+        var leftEyeW = dist(landmarks[33], landmarks[133]);
+        var rightEyeW = dist(landmarks[263], landmarks[362]);
+        var eyeWSymm = Math.min(leftEyeW, rightEyeW) / Math.max(leftEyeW, rightEyeW);
+        // Eye heights
         var leftEyeH = dist(landmarks[159], landmarks[145]);
         var rightEyeH = dist(landmarks[386], landmarks[374]);
-        var eyeSymmetry = 1 - Math.abs(leftEyeH - rightEyeH) / Math.max(leftEyeH, rightEyeH);
-        
-        var leftMouth = dist(landmarks[61], landmarks[1]); // left mouth to nose
-        var rightMouth = dist(landmarks[291], landmarks[1]); // right mouth to nose
-        var mouthSymmetry = 1 - Math.abs(leftMouth - rightMouth) / Math.max(leftMouth, rightMouth);
-        
-        var symRaw = ((eyeSymmetry + mouthSymmetry) / 2) * 10;
-        var sym = Math.max(4, Math.min(9.9, symRaw + (Math.random() * 0.6 - 0.3)));
+        var eyeHSymm = Math.min(leftEyeH, rightEyeH) / Math.max(leftEyeH, rightEyeH);
+        // Mouth corners to nose
+        var leftMouthDist = dist(landmarks[61], noseTip);
+        var rightMouthDist = dist(landmarks[291], noseTip);
+        var mouthSymm = Math.min(leftMouthDist, rightMouthDist) / Math.max(leftMouthDist, rightMouthDist);
+        // Average symmetry (0.0 to 1.0 where 1.0 = perfect)
+        var avgSymm = (eyeWSymm + eyeHSymm + mouthSymm) / 3;
+        // Map: 1.0 -> 9.8, 0.95 -> 8.5, 0.90 -> 7.0, 0.85 -> 5.5
+        var sym = clamp(avgSymm * 12.0 - 2.0, 4.0, 9.9);
 
-        // 4. MIDFACE RATIO - distance from eyes to mouth vs face height
-        // Eyes center: avg of 159,145 (left) and 386,374 (right)
-        // Forehead: 10, Chin: 152
+        // ===== 4. MIDFACE RATIO =====
+        // Ratio of midface length (eyes to mouth) vs lower third (mouth to chin)
         var eyeCenterY = (landmarks[159].y + landmarks[386].y) / 2;
-        var mouthY = landmarks[13].y;
-        var foreheadY = landmarks[10].y;
+        var mouthTopY = landmarks[13].y;
         var chinY = landmarks[152].y;
-        var midfaceDist = mouthY - eyeCenterY;
-        var faceHeight = chinY - foreheadY;
-        var midfaceRatio = midfaceDist / faceHeight;
-        // Ideal midface ratio: ~0.35-0.40 (short midface = attractive)
-        var midRaw = 10 - Math.abs(midfaceRatio - 0.37) * 40;
-        var mid = Math.max(3, Math.min(9.8, midRaw + (Math.random() * 0.8 - 0.4)));
+        var foreheadY = landmarks[10].y;
+        var totalFaceH = chinY - foreheadY;
+        var midfaceLen = mouthTopY - eyeCenterY;
+        var midfaceRatio = midfaceLen / totalFaceH;
+        // Ideal midface ratio: 0.33-0.38 (shorter = more attractive)
+        // Map: 0.30 -> 9.5, 0.35 -> 8.5, 0.40 -> 7.0, 0.45 -> 5.5, 0.50 -> 4.0
+        var mid = clamp(14.0 - midfaceRatio * 20.0, 3.0, 9.9);
 
-        // 5. FWHR (Facial Width-to-Height Ratio)
-        // Width: cheekbone width | Height: brow to upper lip
-        var fwhrWidth = cheekWidth;
-        var fwhrHeight = landmarks[13].y - landmarks[10].y;
-        var fwhr = fwhrWidth / fwhrHeight;
-        // Ideal FWHR: ~1.8-2.0 (masculine/attractive)
-        var fwhrRaw = 10 - Math.abs(fwhr - 1.9) * 8;
-        var fwhrScore = Math.max(3, Math.min(9.8, fwhrRaw + (Math.random() * 0.6 - 0.3)));
+        // ===== 5. FWHR (Facial Width to Height Ratio) =====
+        // Width: bizygomatic | Height: upper face (brow to upper lip)
+        var fwhrVal = cheekW / (mouthTopY - foreheadY);
+        // Ideal FWHR: 1.8-2.1 (higher = more dominant/attractive)
+        // Map: 1.5 -> 5.5, 1.8 -> 7.5, 2.0 -> 8.5, 2.2 -> 9.0, 2.5 -> 7.5
+        var fwhrScore;
+        if (fwhrVal <= 2.0) {
+            fwhrScore = clamp(2.0 + fwhrVal * 3.25, 3.0, 9.5);
+        } else {
+            fwhrScore = clamp(15.0 - fwhrVal * 3.0, 3.0, 9.5);
+        }
 
-        // OVERALL SCORE - weighted average
-        var overall = (hunter * 0.25 + jaw * 0.20 + sym * 0.20 + mid * 0.15 + fwhrScore * 0.20);
-        overall = Math.max(3, Math.min(9.9, overall));
+        // ===== OVERALL AURA SCORE =====
+        var overall = hunter * 0.25 + jaw * 0.20 + sym * 0.20 + mid * 0.15 + fwhrScore * 0.20;
+
+        // Add tiny noise (±0.15) for realism
+        var n = function() { return (Math.random() - 0.5) * 0.3; };
+        hunter = clamp(hunter + n(), 3.0, 9.9);
+        jaw = clamp(jaw + n(), 3.0, 9.9);
+        sym = clamp(sym + n(), 4.0, 9.9);
+        mid = clamp(mid + n(), 3.0, 9.9);
+        fwhrScore = clamp(fwhrScore + n(), 3.0, 9.9);
+        overall = clamp(overall + n() * 0.5, 3.0, 9.9);
 
         return {
             hunter: parseFloat(hunter.toFixed(1)),
@@ -441,185 +479,126 @@
         };
     }
 
-    function renderMetrics(prefix, metrics, delay) {
-        var cats = ['hunter', 'jaw', 'sym', 'mid', 'fwhr'];
-        var d = delay || 0;
-        for (var i = 0; i < cats.length; i++) {
-            (function(cat, idx) {
-                setTimeout(function() {
-                    var el = $(prefix + '-' + cat);
-                    var bar = $(prefix + '-' + cat + '-bar');
-                    if (el) el.innerText = metrics[cat].toFixed(1);
-                    if (bar) bar.style.width = (metrics[cat] * 10) + '%';
-                }, d + idx * 200);
-            })(cats[i], i);
+    var TRAIT_NAMES = {hunter:'HUNTER EYES',jaw:'JAWLINE',sym:'SYMMETRY',mid:'MIDFACE RATIO',fwhr:'FWHR'};
+    var FLAW_NAMES = {hunter:'PREY EYES',jaw:'WEAK JAW',sym:'ASYMMETRY',mid:'LONG MIDFACE',fwhr:'BAD FWHR'};
+    var scanTimerId = null, scanFeedId = null, scanCountdown = 30;
+
+    function getBonFlaw(m) {
+        var keys = ['hunter','jaw','sym','mid','fwhr'], best = keys[0], worst = keys[0];
+        for (var i = 1; i < keys.length; i++) {
+            if (m[keys[i]] > m[best]) best = keys[i];
+            if (m[keys[i]] < m[worst]) worst = keys[i];
         }
+        return {bon: best, flaw: worst};
+    }
+
+    function updateHUD(prefix, metrics) {
+        var sc = $(prefix === 'l' ? 'hud-l-score' : 'hud-s-score');
+        if (sc) sc.innerText = metrics.overall.toFixed(1);
+        var bf = getBonFlaw(metrics);
+        var bon = $(prefix === 'l' ? 'hud-l-bon' : 'hud-s-bon');
+        var flaw = $(prefix === 'l' ? 'hud-l-flaw' : 'hud-s-flaw');
+        if (bon) bon.innerText = TRAIT_NAMES[bf.bon];
+        if (flaw) flaw.innerText = FLAW_NAMES[bf.flaw];
+        var fl = $(prefix === 'l' ? 'float-l-text' : 'float-s-text');
+        if (fl) fl.innerText = TRAIT_NAMES[bf.bon];
+        var flC = $(prefix === 'l' ? 'float-label-local' : 'float-label-stranger');
+        if (flC) flC.style.opacity = '1';
     }
 
     function startLiveMogScan() {
-        myArenaScore = null;
-        opponentArenaScore = null;
-        localLandmarks = null;
-        var btn = $('btn-next-match');
-        if(btn) btn.style.display = 'none';
-        var banner = $('scan-banner');
-        if(banner) banner.style.display = 'flex';
+        myArenaScore = null; opponentArenaScore = null;
+        collectedFrames = []; scanCountdown = 30;
+        var hl = $('hud-local'); if(hl) hl.style.opacity = '1';
+        var hs = $('hud-stranger'); if(hs) hs.style.opacity = '1';
+        var at = $('arena-timer'); if(at) at.style.opacity = '1';
+        var tt = $('arena-timer-text'); if(tt) tt.innerText = '00:30';
 
-        // Start FaceMesh on local video for real analysis
-        if (typeof FaceMesh !== 'undefined') {
-            try {
-                arenaFaceMesh = new FaceMesh({
-                    locateFile: function(file) {
-                        return 'https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/' + file;
+        // Countdown timer
+        var tt = $('arena-timer-text');
+        scanTimerId = setInterval(function() {
+            scanCountdown--;
+            if (tt) tt.innerText = '00:' + (scanCountdown < 10 ? '0' : '') + scanCountdown;
+            if (scanCountdown <= 0) { clearInterval(scanTimerId); finalizeLiveScan(); }
+        }, 1000);
+
+        if (typeof FaceMesh === 'undefined') return;
+        try {
+            arenaFaceMesh = new FaceMesh({ locateFile: function(f) { return 'https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/' + f; } });
+            arenaFaceMesh.setOptions({ maxNumFaces:1, refineLandmarks:true, minDetectionConfidence:0.5, minTrackingConfidence:0.5 });
+            arenaFaceMesh.onResults(function(res) {
+                if (res.multiFaceLandmarks && res.multiFaceLandmarks.length > 0) {
+                    var lm = res.multiFaceLandmarks[0];
+                    collectedFrames.push(lm);
+                    if (collectedFrames.length > 15) collectedFrames.shift();
+                    // Draw mesh
+                    var c = $('arena-local-canvas'), v = $('arena-local-vid');
+                    if (c && v && typeof drawConnectors !== 'undefined') {
+                        if (c.width !== v.videoWidth && v.videoWidth > 0) { c.width = v.videoWidth; c.height = v.videoHeight; }
+                        var ctx = c.getContext('2d'); ctx.clearRect(0,0,c.width,c.height);
+                        drawConnectors(ctx, lm, FACEMESH_TESSELATION, {color:'rgba(34,211,238,0.12)', lineWidth:0.5});
+                        drawConnectors(ctx, lm, FACEMESH_FACE_OVAL, {color:'rgba(34,211,238,0.3)', lineWidth:1});
                     }
-                });
-                arenaFaceMesh.setOptions({ maxNumFaces: 1, refineLandmarks: true, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
-
-                var frameCount = 0;
-                var bestLandmarks = null;
-
-                arenaFaceMesh.onResults(function(results) {
-                    if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
-                        bestLandmarks = results.multiFaceLandmarks[0];
-                        frameCount++;
-
-                        // Draw mesh on local canvas
-                        var c = $('arena-local-canvas');
-                        var v = $('arena-local-vid');
-                        if (c && v && typeof drawConnectors !== 'undefined') {
-                            if (c.width !== v.videoWidth && v.videoWidth > 0) { c.width = v.videoWidth; c.height = v.videoHeight; }
-                            var ctx = c.getContext('2d');
-                            ctx.clearRect(0, 0, c.width, c.height);
-                            drawConnectors(ctx, bestLandmarks, FACEMESH_TESSELATION, {color: 'rgba(34, 211, 238, 0.12)', lineWidth: 0.5});
-                            drawConnectors(ctx, bestLandmarks, FACEMESH_RIGHT_EYE, {color: '#22d3ee', lineWidth: 1});
-                            drawConnectors(ctx, bestLandmarks, FACEMESH_LEFT_EYE, {color: '#22d3ee', lineWidth: 1});
-                            drawConnectors(ctx, bestLandmarks, FACEMESH_FACE_OVAL, {color: 'rgba(34,211,238,0.3)', lineWidth: 1});
-                        }
-                    }
-                });
-
-                // Capture a few frames then analyze
-                var vid = $('arena-local-vid');
-                if (vid && vid.srcObject) {
-                    var scanInterval = setInterval(function() {
-                        if (vid.readyState >= 2) {
-                            arenaFaceMesh.send({image: vid});
-                        }
-                    }, 200);
-
-                    // After 3 seconds, stop scanning and produce result
-                    setTimeout(function() {
-                        clearInterval(scanInterval);
-                        if (banner) banner.style.display = 'none';
-
-                        if (bestLandmarks) {
-                            var metrics = analyzeFace(bestLandmarks);
-                            myArenaScore = metrics;
-                            if (currentConn) {
-                                try { currentConn.send({ type: 'score', score: metrics }); } catch(e) {}
-                            }
-                            if (myArenaScore && opponentArenaScore) finalizeMatch();
-                        } else {
-                            // Fallback if no face detected
-                            myArenaScore = { hunter: 5 + Math.random()*2, jaw: 5+Math.random()*2, sym: 6+Math.random()*2, mid: 5+Math.random()*2, fwhr: 5+Math.random()*2, overall: 5.5+Math.random()*2 };
-                            if (currentConn) { try { currentConn.send({ type: 'score', score: myArenaScore }); } catch(e) {} }
-                            if (myArenaScore && opponentArenaScore) finalizeMatch();
-                        }
-
-                        try { arenaFaceMesh.close(); } catch(e) {}
-                        arenaFaceMesh = null;
-                    }, 3500);
+                    var avg = averageLandmarks(collectedFrames);
+                    var m = analyzeFace(avg);
+                    updateHUD('l', m);
+                    myArenaScore = m;
+                } else {
+                    var sc = $('hud-l-score'); if(sc) sc.innerText = '-.-';
                 }
-            } catch(e) {
-                console.error('[KUSAURA] Arena FaceMesh error:', e);
-                if (banner) banner.style.display = 'none';
-                // Fallback
-                myArenaScore = { hunter: 5+Math.random()*3, jaw: 5+Math.random()*3, sym: 6+Math.random()*2, mid: 5+Math.random()*3, fwhr: 5+Math.random()*3, overall: 5.5+Math.random()*2.5 };
-                if (currentConn) { try { currentConn.send({ type: 'score', score: myArenaScore }); } catch(e2) {} }
-                if (myArenaScore && opponentArenaScore) finalizeMatch();
-            }
-        } else {
-            // No FaceMesh available - fallback
-            if (banner) banner.style.display = 'none';
-            setTimeout(function() {
-                myArenaScore = { hunter: 5+Math.random()*3, jaw: 5+Math.random()*3, sym: 6+Math.random()*2, mid: 5+Math.random()*3, fwhr: 5+Math.random()*3, overall: 5.5+Math.random()*2.5 };
-                if (currentConn) { try { currentConn.send({ type: 'score', score: myArenaScore }); } catch(e) {} }
-                if (myArenaScore && opponentArenaScore) finalizeMatch();
-            }, 3000);
-        }
+            });
+            var vid = $('arena-local-vid');
+            scanFeedId = setInterval(function() {
+                if (vid && vid.readyState >= 2 && arenaFaceMesh) arenaFaceMesh.send({image: vid});
+            }, 300);
+        } catch(e) { console.error('[KUSAURA] Scan error:', e); }
+    }
+
+    function finalizeLiveScan() {
+        clearInterval(scanTimerId); clearInterval(scanFeedId);
+        if (arenaFaceMesh) { try { arenaFaceMesh.close(); } catch(e){} arenaFaceMesh = null; }
+        var at = $('arena-timer'); if(at) at.style.opacity = '0';
+        if (!myArenaScore) myArenaScore = {hunter:5,jaw:5,sym:5,mid:5,fwhr:5,overall:5.0};
+        if (currentConn) { try { currentConn.send({type:'score',score:myArenaScore}); } catch(e){} }
+        if (myArenaScore && opponentArenaScore) finalizeMatch();
     }
 
     function finalizeMatch() {
-        var myM = myArenaScore;
-        var opM = opponentArenaScore;
-        var mScore = myM.overall || parseFloat(myM);
-        var sScore = opM.overall || parseFloat(opM);
-        var iWon = mScore > sScore;
-
-        // Set scores
-        var sScoreEl = $('stranger-score'); if(sScoreEl) sScoreEl.innerText = (typeof sScore === 'number' ? sScore.toFixed(1) : sScore);
-        var mScoreEl = $('local-score'); if(mScoreEl) mScoreEl.innerText = (typeof mScore === 'number' ? mScore.toFixed(1) : mScore);
-
+        clearInterval(scanTimerId); clearInterval(scanFeedId);
+        var mS = myArenaScore.overall || 5, sS = opponentArenaScore.overall || 5;
         var expected = 1 / (1 + Math.pow(10, (1000 - myElo) / 400));
-        var sStatus = $('stranger-status'), mStatus = $('local-status');
-
-        if (iWon) {
-            if(sStatus) { sStatus.innerText = 'MOGGED'; sStatus.className = 'font-bold text-2xl tracking-[0.2em] uppercase mt-1 mb-4 text-red-500 drop-shadow-[0_0_10px_rgba(239,68,68,0.8)]'; }
-            if(mStatus) { mStatus.innerText = 'MOGGER'; mStatus.className = 'font-bold text-2xl tracking-[0.2em] uppercase mt-1 mb-4 text-green-400 drop-shadow-[0_0_10px_rgba(74,222,128,0.8)]'; }
-            myElo += Math.round(32 * (1 - expected));
-        } else if (mScore < sScore) {
-            if(sStatus) { sStatus.innerText = 'MOGGER'; sStatus.className = 'font-bold text-2xl tracking-[0.2em] uppercase mt-1 mb-4 text-green-400 drop-shadow-[0_0_10px_rgba(74,222,128,0.8)]'; }
-            if(mStatus) { mStatus.innerText = 'MOGGED'; mStatus.className = 'font-bold text-2xl tracking-[0.2em] uppercase mt-1 mb-4 text-red-500 drop-shadow-[0_0_10px_rgba(239,68,68,0.8)]'; }
-            myElo += Math.round(32 * (0 - expected));
-        } else {
-            if(sStatus) { sStatus.innerText = 'DRAW'; sStatus.className = 'font-bold text-2xl tracking-[0.2em] uppercase mt-1 mb-4 text-yellow-400'; }
-            if(mStatus) { mStatus.innerText = 'DRAW'; mStatus.className = 'font-bold text-2xl tracking-[0.2em] uppercase mt-1 mb-4 text-yellow-400'; }
-        }
-
+        if (mS > sS) myElo += Math.round(32 * (1 - expected));
+        else if (mS < sS) myElo += Math.round(32 * (0 - expected));
         updateUIElo();
-
-        // Show overlays
-        var so = $('stranger-score-overlay'); if(so) { so.style.opacity = '1'; so.style.transform = 'scale(1)'; }
-        var lo = $('local-score-overlay'); if(lo) { lo.style.opacity = '1'; lo.style.transform = 'scale(1)'; }
-
-        // Animate metric bars with stagger
-        if (myM.hunter !== undefined) renderMetrics('l', myM, 300);
-        if (opM.hunter !== undefined) renderMetrics('s', opM, 300);
-
-        var btn = $('btn-next-match'); if(btn) { btn.innerText = '⏭️ NEXT MATCH'; btn.style.display = 'flex'; }
+        updateHUD('l', myArenaScore);
+        updateHUD('s', opponentArenaScore);
+        var el = $('hud-l-elo-val'); if(el) el.innerText = myElo;
     }
 
     function stopSearching() { isSearching = false; clearInterval(arenaSearchInterval); }
 
     function exitArena() {
         stopSearching();
+        clearInterval(scanTimerId); clearInterval(scanFeedId);
         if(arenaFaceMesh) { try { arenaFaceMesh.close(); } catch(e){} arenaFaceMesh = null; }
         if(currentCall) { try { currentCall.close(); } catch(e){} currentCall = null; }
         if(currentConn) { try { currentConn.close(); } catch(e){} currentConn = null; }
         if(currentPrivateChannel) { try { currentPrivateChannel.unsubscribe(); } catch(e){} currentPrivateChannel = null; }
         if(arenaStream) { var t = arenaStream.getTracks(); for(var i=0;i<t.length;i++) t[i].stop(); arenaStream = null; }
-        var banner = $('scan-banner'); if(banner) banner.style.display = 'none';
-        // Clear canvases
-        var lc = $('arena-local-canvas'); if(lc) { var ctx = lc.getContext('2d'); ctx.clearRect(0,0,lc.width,lc.height); }
-        var sc = $('arena-stranger-canvas'); if(sc) { var ctx2 = sc.getContext('2d'); ctx2.clearRect(0,0,sc.width,sc.height); }
+        var lc = $('arena-local-canvas'); if(lc) lc.getContext('2d').clearRect(0,0,lc.width,lc.height);
         navigate('menu');
     }
 
     function resetArenaUI() {
-        var so = $('stranger-score-overlay'); if(so) { so.style.opacity = '0'; so.style.transform = 'scale(0.9)'; }
-        var lo = $('local-score-overlay'); if(lo) { lo.style.opacity = '0'; lo.style.transform = 'scale(0.9)'; }
         var sv = $('arena-stranger-vid'); if(sv) sv.srcObject = null;
-        var btn = $('btn-next-match'); if(btn) { btn.innerText = '❌ CANCEL SEARCH'; btn.style.display = 'flex'; }
-        // Reset metric bars
-        var cats = ['hunter', 'jaw', 'sym', 'mid', 'fwhr'];
-        var prefixes = ['l', 's'];
-        for (var p = 0; p < prefixes.length; p++) {
-            for (var c = 0; c < cats.length; c++) {
-                var el = $(prefixes[p] + '-' + cats[c]); if(el) el.innerText = '-';
-                var bar = $(prefixes[p] + '-' + cats[c] + '-bar'); if(bar) bar.style.width = '0%';
-            }
-        }
-        var banner = $('scan-banner'); if(banner) banner.style.display = 'none';
+        var ids = ['hud-local','hud-stranger','arena-timer','float-label-local','float-label-stranger'];
+        for(var i=0;i<ids.length;i++) { var e=$(ids[i]); if(e) e.style.opacity='0'; }
+        var ls = $('hud-l-score'); if(ls) ls.innerText = '-.-';
+        var ss = $('hud-s-score'); if(ss) ss.innerText = '-.-';
+        var b1=$('hud-l-bon'); if(b1) b1.innerText='—';
+        var b2=$('hud-s-bon'); if(b2) b2.innerText='—';
+        var f1=$('hud-l-flaw'); if(f1) f1.innerText='—';
+        var f2=$('hud-s-flaw'); if(f2) f2.innerText='—';
     }
 
     // ==========================================
