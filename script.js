@@ -12,12 +12,14 @@
     // ==========================================
     let myElo = 1000;
     let baseOnline = 0;
+    let userIp = null, userProfileId = null;
     let ccCamera = null, ccFaceMesh = null, ccStage = 0;
     let ccBlinkCount = 0, ccBlinkState = false;
     let supabase = null, arenaChannel = null, myPeerId = null, peer = null;
     let currentPrivateChannel = null, presenceChannel = null;
     let arenaStream = null, isSearching = false, arenaSearchInterval = null;
     let currentCall = null, currentConn = null, myArenaScore = null, opponentArenaScore = null;
+    let matchFinalized = false;
 
     const SUPABASE_URL = 'https://fumhnfdozcjzyvgwirne.supabase.co';
     const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ1bWhuZmRvemNqenl2Z3dpcm5lIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg5MjA1MjksImV4cCI6MjA5NDQ5NjUyOX0.pYr9dRij0B5weGjdgAtU9oKCv7wI1e4Z2jxq6gSbZws';
@@ -359,7 +361,10 @@
     function setupDataConnection(conn) {
         currentConn = conn;
         conn.on('data', function(data) {
-            if (data.type === 'score') {
+            if (data.type === 'live_score') {
+                opponentArenaScore = data.score;
+                updateHUD('s', data.score);
+            } else if (data.type === 'score') {
                 opponentArenaScore = data.score;
                 if (myArenaScore && opponentArenaScore) finalizeMatch();
             }
@@ -375,6 +380,12 @@
 
     function dist(a, b) {
         return Math.sqrt(Math.pow(a.x - b.x, 2) + Math.pow(a.y - b.y, 2));
+    }
+
+    function getEAR(lm, indices) {
+        var w = dist(lm[indices[0]], lm[indices[2]]);
+        var h = dist(lm[indices[1]], lm[indices[3]]);
+        return h / w;
     }
 
     // Average multiple landmark frames for stability
@@ -511,18 +522,23 @@
 
     function startLiveMogScan() {
         myArenaScore = null; opponentArenaScore = null;
-        collectedFrames = []; scanCountdown = 30;
+        collectedFrames = []; scanCountdown = 30; matchFinalized = false;
+        
+        // Anti-Cheat
+        var minEAR = 1.0;
         var hl = $('hud-local'); if(hl) hl.style.opacity = '1';
         var hs = $('hud-stranger'); if(hs) hs.style.opacity = '1';
         var at = $('arena-timer'); if(at) at.style.opacity = '1';
         var tt = $('arena-timer-text'); if(tt) tt.innerText = '00:30';
 
-        // Countdown timer
-        var tt = $('arena-timer-text');
+        // 30-second countdown timer
         scanTimerId = setInterval(function() {
             scanCountdown--;
             if (tt) tt.innerText = '00:' + (scanCountdown < 10 ? '0' : '') + scanCountdown;
-            if (scanCountdown <= 0) { clearInterval(scanTimerId); finalizeLiveScan(); }
+            if (scanCountdown <= 0) {
+                clearInterval(scanTimerId);
+                finalizeLiveScan();
+            }
         }, 1000);
 
         if (typeof FaceMesh === 'undefined') return;
@@ -534,6 +550,13 @@
                     var lm = res.multiFaceLandmarks[0];
                     collectedFrames.push(lm);
                     if (collectedFrames.length > 15) collectedFrames.shift();
+                    
+                    // Anti-Cheat: Track blinks via Eye Aspect Ratio
+                    var leftEar = getEAR(lm, [33, 159, 133, 145]);
+                    var rightEar = getEAR(lm, [362, 386, 263, 374]);
+                    var avgEar = (leftEar + rightEar) / 2;
+                    if (avgEar < minEAR) minEAR = avgEar;
+
                     // Draw mesh
                     var c = $('arena-local-canvas'), v = $('arena-local-vid');
                     if (c && v && typeof drawConnectors !== 'undefined') {
@@ -546,6 +569,10 @@
                     var m = analyzeFace(avg);
                     updateHUD('l', m);
                     myArenaScore = m;
+                    // Broadcast live score continuously
+                    if (currentConn && currentConn.open) {
+                        try { currentConn.send({ type: 'live_score', score: m }); } catch(e){}
+                    }
                 } else {
                     var sc = $('hud-l-score'); if(sc) sc.innerText = '-.-';
                 }
@@ -561,21 +588,76 @@
         clearInterval(scanTimerId); clearInterval(scanFeedId);
         if (arenaFaceMesh) { try { arenaFaceMesh.close(); } catch(e){} arenaFaceMesh = null; }
         var at = $('arena-timer'); if(at) at.style.opacity = '0';
+        
         if (!myArenaScore) myArenaScore = {hunter:5,jaw:5,sym:5,mid:5,fwhr:5,overall:5.0};
+        
+        // Anti-Cheat Check: If minEAR > 0.23, user never blinked in 30s (Fake Photo)
+        if (minEAR > 0.23) {
+            myArenaScore = {hunter:0, jaw:0, sym:0, mid:0, fwhr:0, overall:0.0, isFake: true};
+            showToast('FAKE PHOTO DETECTED! ANTI-CHEAT BAN', 'error');
+            myElo -= 50; // Heavy penalty
+            saveElo();
+        }
+
         if (currentConn) { try { currentConn.send({type:'score',score:myArenaScore}); } catch(e){} }
         if (myArenaScore && opponentArenaScore) finalizeMatch();
     }
 
     function finalizeMatch() {
+        if (matchFinalized) return;
+        matchFinalized = true;
         clearInterval(scanTimerId); clearInterval(scanFeedId);
+
+        try { new Audio('https://actions.google.com/sounds/v1/animals/little_bird_chirp.ogg').play(); } catch(e) {}
+
         var mS = myArenaScore.overall || 5, sS = opponentArenaScore.overall || 5;
         var expected = 1 / (1 + Math.pow(10, (1000 - myElo) / 400));
-        if (mS > sS) myElo += Math.round(32 * (1 - expected));
-        else if (mS < sS) myElo += Math.round(32 * (0 - expected));
+        var eloChange = 0;
+        var iWon = mS > sS;
+        var iDraw = mS === sS;
+
+        if (iWon) eloChange = Math.round(32 * (1 - expected));
+        else if (!iDraw) eloChange = Math.round(32 * (0 - expected));
+        
+        if (myArenaScore.isFake) eloChange = -50; // Force -50 penalty for cheating
+
+        myElo += eloChange;
+
         updateUIElo();
+        saveElo();
         updateHUD('l', myArenaScore);
         updateHUD('s', opponentArenaScore);
         var el = $('hud-l-elo-val'); if(el) el.innerText = myElo;
+
+        var ro = $('match-result-overlay');
+        var rc = $('match-result-content');
+        var rt = $('match-result-text');
+        var rs = $('match-result-sub');
+        if (ro && rt && rs && rc) {
+            if (myArenaScore.isFake) {
+                rt.innerText = 'BANNED';
+                rt.className = 'font-logo text-[80px] md:text-[120px] leading-none mb-4 tracking-widest uppercase text-red-700 drop-shadow-[0_0_60px_rgba(185,28,28,1)]';
+                rs.innerText = 'FAKE PHOTO DETECTED -50 ELO';
+            } else if (iWon) {
+                rt.innerText = 'MOGGER';
+                rt.className = 'font-logo text-[80px] md:text-[120px] leading-none mb-4 tracking-widest uppercase text-green-500 drop-shadow-[0_0_40px_rgba(34,197,94,0.8)]';
+                rs.innerText = 'YOU WON +' + eloChange + ' ELO';
+            } else if (iDraw) {
+                rt.innerText = 'DRAW';
+                rt.className = 'font-logo text-[80px] md:text-[120px] leading-none mb-4 tracking-widest uppercase text-yellow-500 drop-shadow-[0_0_40px_rgba(234,179,8,0.8)]';
+                rs.innerText = '+0 ELO';
+            } else {
+                rt.innerText = 'MOGGED';
+                rt.className = 'font-logo text-[80px] md:text-[120px] leading-none mb-4 tracking-widest uppercase text-red-600 drop-shadow-[0_0_40px_rgba(220,38,38,0.8)]';
+                rs.innerText = 'YOU LOST ' + eloChange + ' ELO';
+            }
+            ro.classList.remove('pointer-events-none');
+            ro.style.opacity = '1';
+            rc.style.transform = 'scale(1)';
+        }
+
+        var btnExit = $('btn-exit-arena');
+        if (btnExit) btnExit.style.display = 'none';
     }
 
     function stopSearching() { isSearching = false; clearInterval(arenaSearchInterval); }
@@ -602,6 +684,16 @@
         var b2=$('hud-s-bon'); if(b2) b2.innerText='—';
         var f1=$('hud-l-flaw'); if(f1) f1.innerText='—';
         var f2=$('hud-s-flaw'); if(f2) f2.innerText='—';
+        
+        var ro = $('match-result-overlay');
+        var rc = $('match-result-content');
+        if (ro && rc) {
+            ro.classList.add('pointer-events-none');
+            ro.style.opacity = '0';
+            rc.style.transform = 'scale(0.5)';
+        }
+        var btnExit = $('btn-exit-arena');
+        if (btnExit) btnExit.style.display = 'flex';
     }
 
     // ==========================================
@@ -687,7 +779,7 @@
         if (btnNext) {
             btnNext.addEventListener('click', function(e) {
                 e.preventDefault();
-                startArenaMatch(false, null, false);
+                exitArena();
             });
         }
     }
@@ -695,13 +787,53 @@
     // ==========================================
     // MULTIPLAYER INIT (safe, non-blocking)
     // ==========================================
+    function simpleHash(str) {
+        var hash = 0;
+        for (var i = 0; i < str.length; i++) { hash = ((hash << 5) - hash) + str.charCodeAt(i); hash |= 0; }
+        return 'ip_' + Math.abs(hash).toString(36);
+    }
+
+    function loadOrCreateProfile() {
+        if (!supabase || !userIp) return;
+        var username = simpleHash(userIp);
+        supabase.from('profiles').select('*').eq('username', username).single()
+            .then(function(res) {
+                if (res.data) {
+                    userProfileId = res.data.id;
+                    myElo = res.data.elo_rating || 1000;
+                    updateUIElo();
+                    console.log('[KUSAURA] Profile loaded, ELO:', myElo);
+                } else {
+                    supabase.from('profiles').insert({ username: username, elo_rating: 1000, is_verified: false })
+                        .select().single()
+                        .then(function(ins) {
+                            if (ins.data) { userProfileId = ins.data.id; console.log('[KUSAURA] Profile created'); }
+                        });
+                }
+            });
+    }
+
+    function saveElo() {
+        if (!supabase || !userProfileId) return;
+        supabase.from('profiles').update({ elo_rating: myElo, peak_elo: Math.max(myElo, 1000), last_seen_at: new Date().toISOString() })
+            .eq('id', userProfileId).then(function() { console.log('[KUSAURA] ELO saved:', myElo); });
+    }
+
     function initMultiplayer() {
+        // Fetch device IP first
+        fetch('https://api.ipify.org?format=json')
+            .then(function(r) { return r.json(); })
+            .then(function(d) { userIp = d.ip; console.log('[KUSAURA] IP:', userIp); })
+            .catch(function() { userIp = 'unknown_' + Date.now(); });
+
         try {
             if (window.supabase && window.supabase.createClient) {
                 supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
                 arenaChannel = supabase.channel('global_arena', { config: { broadcast: { self: false } } });
                 console.log('[KUSAURA] Supabase connected');
                 initPresence();
+                // Load profile after IP is fetched
+                setTimeout(function() { loadOrCreateProfile(); }, 1500);
             } else {
                 console.warn('[KUSAURA] Supabase not available');
             }
