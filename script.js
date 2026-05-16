@@ -114,6 +114,15 @@ async function startRealCameraCheck() {
     ccFaceMesh = new FaceMesh({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`});
     ccFaceMesh.setOptions({ maxNumFaces: 1, refineLandmarks: true, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
     
+    let lastBadgeText = "";
+    function updateBadge(html) {
+        if (lastBadgeText !== html) {
+            actionBadge.innerHTML = html;
+            lucide.createIcons();
+            lastBadgeText = html;
+        }
+    }
+
     ccFaceMesh.onResults((results) => {
         statusText.style.display = 'none';
         ctx.save(); ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -122,10 +131,9 @@ async function startRealCameraCheck() {
             drawConnectors(ctx, landmarks, FACEMESH_TESSELATION, {color: 'rgba(34, 211, 238, 0.15)', lineWidth: 0.5});
             drawConnectors(ctx, landmarks, FACEMESH_RIGHT_EYE, {color: '#22d3ee'});
             drawConnectors(ctx, landmarks, FACEMESH_LEFT_EYE, {color: '#22d3ee'});
-            processLiveness(landmarks, actionBadge, progressBar);
+            processLiveness(landmarks, updateBadge, progressBar);
         } else {
-            actionBadge.innerHTML = '<i data-lucide="alert-triangle" class="w-5 h-5 text-red-500"></i> FACE NOT DETECTED';
-            lucide.createIcons();
+            updateBadge('<i data-lucide="alert-triangle" class="w-5 h-5 text-red-500"></i> FACE NOT DETECTED');
         }
         ctx.restore();
     });
@@ -139,14 +147,16 @@ async function startRealCameraCheck() {
     try { await ccCamera.start(); } catch (e) { statusText.innerText = "CAMERA ERROR"; }
 }
 
-function processLiveness(landmarks, actionBadge, progressBar) {
+let stage3Timer = null;
+
+function processLiveness(landmarks, updateBadge, progressBar) {
     if (ccStage === 1) {
-        actionBadge.innerHTML = '<i data-lucide="scan-face" class="w-5 h-5"></i> HOLD STILL'; lucide.createIcons();
+        updateBadge('<i data-lucide="scan-face" class="w-5 h-5"></i> HOLD STILL');
         progressBar.style.width = '25%';
         setTimeout(() => { if (ccStage === 1) { ccStage = 2; document.getElementById('step-2').className = 'text-cyan-400 drop-shadow-[0_0_8px_rgba(0,255,213,0.5)]'; } }, 1500);
     }
     else if (ccStage === 2) {
-        actionBadge.innerHTML = '<i data-lucide="eye" class="w-5 h-5"></i> BLINK NOW'; lucide.createIcons();
+        updateBadge('<i data-lucide="eye" class="w-5 h-5"></i> BLINK NOW');
         progressBar.style.width = '50%';
         const leftDist = Math.abs(landmarks[159].y - landmarks[145].y), rightDist = Math.abs(landmarks[386].y - landmarks[374].y);
         const isBlinking = (leftDist < 0.012 && rightDist < 0.012);
@@ -155,16 +165,21 @@ function processLiveness(landmarks, actionBadge, progressBar) {
         if (ccBlinkCount >= 1) { ccStage = 3; document.getElementById('step-3').className = 'text-cyan-400 drop-shadow-[0_0_8px_rgba(0,255,213,0.5)]'; }
     }
     else if (ccStage === 4) {
-        actionBadge.innerHTML = '<i data-lucide="refresh-cw" class="w-5 h-5"></i> TURN HEAD LEFT/RIGHT'; lucide.createIcons();
+        updateBadge('<i data-lucide="refresh-cw" class="w-5 h-5"></i> TURN HEAD LEFT/RIGHT');
         progressBar.style.width = '75%';
         const noseX = landmarks[1].x;
         if (noseX < 0.40 || noseX > 0.60) { ccStage = 5; document.getElementById('step-4').className = 'text-cyan-400 drop-shadow-[0_0_8px_rgba(0,255,213,0.5)]'; }
     }
-    else if (ccStage === 3) { setTimeout(() => { if(ccStage === 3) ccStage = 4; }, 500); }
+    else if (ccStage === 3) { 
+        if(!stage3Timer) {
+            stage3Timer = setTimeout(() => { if(ccStage === 3) ccStage = 4; stage3Timer = null; }, 500);
+        }
+    }
     else if (ccStage === 5) {
-        actionBadge.innerHTML = '<i data-lucide="check-circle" class="w-5 h-5"></i> VERIFIED';
-        actionBadge.classList.replace('bg-black/80', 'bg-green-600/90'); actionBadge.classList.replace('border-white/20', 'border-green-400');
-        lucide.createIcons(); progressBar.style.width = '100%'; document.getElementById('scanner-line').classList.add('hidden');
+        updateBadge('<i data-lucide="check-circle" class="w-5 h-5"></i> VERIFIED');
+        document.getElementById('action-badge').classList.replace('bg-black/80', 'bg-green-600/90'); 
+        document.getElementById('action-badge').classList.replace('border-white/20', 'border-green-400');
+        progressBar.style.width = '100%'; document.getElementById('scanner-line').classList.add('hidden');
         ccStage = 6; setTimeout(() => { navigate('menu'); stopCameraCheck(); }, 1500);
     }
 }
