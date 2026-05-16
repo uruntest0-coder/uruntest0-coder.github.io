@@ -11,7 +11,8 @@
     
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- Use jsdelivr instead of unpkg for better reliability -->
+    <script src="https://cdn.jsdelivr.net/npm/lucide@latest/dist/umd/lucide.js"></script>
     
     <!-- MediaPipe Face Mesh -->
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
@@ -21,7 +22,7 @@
 
     <!-- Supabase & PeerJS for Real Multiplayer -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="https://unpkg.com/peerjs@1.5.1/dist/peerjs.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.1/dist/peerjs.min.js"></script>
 
     <!-- Custom CSS -->
     <link rel="stylesheet" href="styles.css">
@@ -51,10 +52,10 @@
                 <span id="online-count-1" class="text-[10px] font-bold tracking-widest text-white">1486 ONLINE</span>
             </div>
 
-            <div class="panel w-full max-w-2xl p-12 flex flex-col items-center justify-center mb-8 relative">
+            <div class="panel w-full max-w-2xl p-12 flex flex-col items-center justify-center mb-8 relative z-50">
                 <i data-lucide="swords" class="w-10 h-10 text-[#a19eb1] mb-4"></i>
                 <h2 class="text-cyber text-2xl md:text-3xl font-black mb-6">ENTER THE ARENA</h2>
-                <button onclick="navigate('camera-check')" class="btn-outline-cyan font-logo tracking-widest px-8 py-3 text-lg">
+                <button onclick="if(typeof navigate === 'function') { navigate('camera-check'); } else { alert('HATA: script.js yüklenemedi! Sayfayı CTRL+F5 ile yenile.'); }" class="btn-outline-cyan font-logo tracking-widest px-8 py-3 text-lg relative z-50 cursor-pointer pointer-events-auto">
                     START CAMERA CHECK
                 </button>
             </div>
@@ -287,6 +288,6 @@
     <!-- UI Overlay for Fake Notifications -->
     <div id="toast-container" class="fixed top-20 right-4 z-[9999] flex flex-col gap-2"></div>
 
-    <script src="script.js"></script>
+    <script src="script.js?v=5"></script>
 </body>
 </html>
