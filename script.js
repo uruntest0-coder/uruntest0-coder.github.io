@@ -11,11 +11,11 @@
     // STATE
     // ==========================================
     let myElo = 1000;
-    let baseOnline = 1487;
+    let baseOnline = 0;
     let ccCamera = null, ccFaceMesh = null, ccStage = 0;
     let ccBlinkCount = 0, ccBlinkState = false;
     let supabase = null, arenaChannel = null, myPeerId = null, peer = null;
-    let currentPrivateChannel = null;
+    let currentPrivateChannel = null, presenceChannel = null;
     let arenaStream = null, isSearching = false, arenaSearchInterval = null;
     let currentCall = null, currentConn = null, myArenaScore = null, opponentArenaScore = null;
 
@@ -49,16 +49,30 @@
     }
 
     // ==========================================
-    // DYNAMIC ONLINE COUNTER
+    // REAL ONLINE COUNTER (Supabase Presence)
     // ==========================================
-    setInterval(function() {
-        baseOnline += Math.floor(Math.random() * 11) - 5;
-        if (baseOnline < 1400) baseOnline = 1400;
-        if (baseOnline > 1600) baseOnline = 1600;
-        var text = baseOnline + ' ONLINE';
+    function updateOnlineDisplay(count) {
+        baseOnline = count;
+        var text = count + ' ONLINE';
         var e1 = $('online-count-1'); if(e1) e1.innerText = text;
         var e2 = $('online-count-2'); if(e2) e2.innerText = text;
-    }, 3500);
+    }
+
+    function initPresence() {
+        if (!supabase) return;
+        presenceChannel = supabase.channel('presence-online', { config: { presence: { key: myPeerId || ('user_' + Math.random().toString(36).substr(2,9)) } } });
+        presenceChannel.on('presence', { event: 'sync' }, function() {
+            var state = presenceChannel.presenceState();
+            var count = Object.keys(state).length;
+            updateOnlineDisplay(count);
+        });
+        presenceChannel.subscribe(function(status) {
+            if (status === 'SUBSCRIBED') {
+                presenceChannel.track({ online_at: new Date().toISOString() });
+            }
+        });
+    }
+    updateOnlineDisplay(0);
 
     // ==========================================
     // ROUTER
@@ -298,8 +312,7 @@
                 var localVid = $('arena-local-vid');
                 if(localVid) localVid.srcObject = stream;
 
-                // Start AI scan IMMEDIATELY
-                setTimeout(function() { startLiveMogScan(); }, 500);
+                // Wait for real opponent before scanning
 
                 if (peer && supabase && myPeerId) {
                     if (isPrivate) {
@@ -395,9 +408,7 @@
         var leftTiltDeg = Math.atan2(landmarks[133].y - landmarks[33].y, Math.abs(landmarks[33].x - landmarks[133].x)) * (180 / Math.PI);
         var rightTiltDeg = Math.atan2(landmarks[362].y - landmarks[263].y, Math.abs(landmarks[263].x - landmarks[362].x)) * (180 / Math.PI);
         var avgTiltDeg = (leftTiltDeg + rightTiltDeg) / 2;
-        // Typical range: -5 to +10 degrees. Positive = hunter eyes
-        // Map: -5deg -> 4.0, 0deg -> 6.5, +5deg -> 8.5, +10deg -> 9.5
-        var hunter = clamp(6.5 + avgTiltDeg * 0.5, 3.0, 9.9);
+        var hunter = clamp(8.0 + avgTiltDeg * 0.4, 4.0, 9.9);
 
         // ===== 2. JAWLINE DEFINITION =====
         // Compare gonion (jaw angle) width to bizygomatic (cheekbone) width
@@ -405,9 +416,7 @@
         var jawW = dist(landmarks[172], landmarks[397]);
         var cheekW = dist(landmarks[234], landmarks[454]);
         var jawRatio = jawW / cheekW;
-        // Good jawline: ratio 0.75-0.85 (jaw narrower than cheeks = defined)
-        // Map: 0.70 -> 9.0, 0.80 -> 8.5, 0.90 -> 7.0, 1.0 -> 5.5
-        var jaw = clamp(12.5 - jawRatio * 5.0, 3.0, 9.9);
+        var jaw = clamp(14.0 - jawRatio * 5.5, 5.0, 9.9);
 
         // ===== 3. FACIAL SYMMETRY =====
         // Compare left/right distances from nose center (landmark 1)
@@ -426,8 +435,7 @@
         var mouthSymm = Math.min(leftMouthDist, rightMouthDist) / Math.max(leftMouthDist, rightMouthDist);
         // Average symmetry (0.0 to 1.0 where 1.0 = perfect)
         var avgSymm = (eyeWSymm + eyeHSymm + mouthSymm) / 3;
-        // Map: 1.0 -> 9.8, 0.95 -> 8.5, 0.90 -> 7.0, 0.85 -> 5.5
-        var sym = clamp(avgSymm * 12.0 - 2.0, 4.0, 9.9);
+        var sym = clamp(avgSymm * 10.0 + 0.5, 5.0, 9.9);
 
         // ===== 4. MIDFACE RATIO =====
         // Ratio of midface length (eyes to mouth) vs lower third (mouth to chin)
@@ -438,9 +446,7 @@
         var totalFaceH = chinY - foreheadY;
         var midfaceLen = mouthTopY - eyeCenterY;
         var midfaceRatio = midfaceLen / totalFaceH;
-        // Ideal midface ratio: 0.33-0.38 (shorter = more attractive)
-        // Map: 0.30 -> 9.5, 0.35 -> 8.5, 0.40 -> 7.0, 0.45 -> 5.5, 0.50 -> 4.0
-        var mid = clamp(14.0 - midfaceRatio * 20.0, 3.0, 9.9);
+        var mid = clamp(15.5 - midfaceRatio * 18.0, 5.0, 9.9);
 
         // ===== 5. FWHR (Facial Width to Height Ratio) =====
         // Width: bizygomatic | Height: upper face (brow to upper lip)
@@ -449,9 +455,9 @@
         // Map: 1.5 -> 5.5, 1.8 -> 7.5, 2.0 -> 8.5, 2.2 -> 9.0, 2.5 -> 7.5
         var fwhrScore;
         if (fwhrVal <= 2.0) {
-            fwhrScore = clamp(2.0 + fwhrVal * 3.25, 3.0, 9.5);
+            fwhrScore = clamp(3.5 + fwhrVal * 3.0, 5.0, 9.8);
         } else {
-            fwhrScore = clamp(15.0 - fwhrVal * 3.0, 3.0, 9.5);
+            fwhrScore = clamp(16.0 - fwhrVal * 3.0, 5.0, 9.8);
         }
 
         // ===== OVERALL AURA SCORE =====
@@ -695,6 +701,7 @@
                 supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
                 arenaChannel = supabase.channel('global_arena', { config: { broadcast: { self: false } } });
                 console.log('[KUSAURA] Supabase connected');
+                initPresence();
             } else {
                 console.warn('[KUSAURA] Supabase not available');
             }
