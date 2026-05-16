@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>KUSAURA — the live mog arena</title>
+    
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@700;800;900&display=swap" rel="stylesheet">
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    
+    <!-- MediaPipe Face Mesh -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
+
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body class="min-h-screen flex flex-col relative">
+
+    <div class="top-banner w-full flex justify-between items-center px-4 py-2 text-xs z-50 bg-[#050505]">
+        <div class="flex items-center gap-2">
+            <i data-lucide="ghost" class="w-4 h-4 text-pink-300"></i>
+        </div>
+        <div class="text-[#a19eb1] tracking-wide text-center flex-grow">
+            You're playing as a Guest. Click here to claim your rank with Google.
+        </div>
+        <button class="btn-claim uppercase">Claim</button>
+    </div>
+
+    <main class="flex-grow flex flex-col items-center w-full pt-8 pb-8 px-4">
+        
+        <!-- VIEW 1: LANDING -->
+        <div id="view-landing" class="view active flex-col items-center w-full max-w-4xl mx-auto">
+            <h1 class="font-logo text-[80px] md:text-[120px] leading-none text-white drop-shadow-[0_0_40px_rgba(255,255,255,0.2)] mb-6">
+                KUSAURA
+            </h1>
+            
+            <div class="flex items-center gap-2 bg-[#0c1410] border border-[#162e22] px-3 py-1.5 rounded-full mb-12">
+                <span class="dot-green"></span>
+                <span id="online-count-1" class="text-[10px] font-bold tracking-widest text-white">1486 ONLINE</span>
+            </div>
+
+            <div class="panel w-full max-w-2xl p-12 flex flex-col items-center justify-center mb-8 relative">
+                <i data-lucide="swords" class="w-10 h-10 text-[#a19eb1] mb-4"></i>
+                <h2 class="text-cyber text-2xl md:text-3xl font-black mb-6">ENTER THE ARENA</h2>
+                <button onclick="navigate('camera-check')" class="btn-outline-cyan font-logo tracking-widest px-8 py-3 text-lg">
+                    START CAMERA CHECK
+                </button>
+            </div>
+
+            <!-- Info Boxes -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 w-full max-w-4xl mb-4">
+                <div class="panel p-5 flex items-start gap-4 hover:border-white/20 transition-all">
+                    <div class="bg-[#1a1a1a] text-[#a19eb1] w-6 h-6 rounded flex items-center justify-center text-xs font-bold shrink-0">1</div>
+                    <div>
+                        <h3 class="text-cyber text-sm font-bold mb-2">CAMERA CHECK</h3>
+                        <div class="flex items-start gap-2 text-xs text-[#8b8b8b] leading-relaxed">
+                            <i data-lucide="camera" class="w-4 h-4 shrink-0 mt-0.5"></i>
+                            <p>Complete a quick camera check to get started.</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="panel p-5 flex items-start gap-4 hover:border-white/20 transition-all">
+                    <div class="bg-[#1a1a1a] text-[#a19eb1] w-6 h-6 rounded flex items-center justify-center text-xs font-bold shrink-0">2</div>
+                    <div>
+                        <h3 class="text-cyber text-sm font-bold mb-2">SOLO PSL SCAN</h3>
+                        <div class="flex items-start gap-2 text-xs text-[#8b8b8b] leading-relaxed">
+                            <i data-lucide="flask-conical" class="w-4 h-4 shrink-0 text-green-400 mt-0.5"></i>
+                            <p>Take a Solo PSL Scan to verify you mog.</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="panel p-5 flex items-start gap-4 hover:border-white/20 transition-all">
+                    <div class="bg-[#1a1a1a] text-[#a19eb1] w-6 h-6 rounded flex items-center justify-center text-xs font-bold shrink-0">3</div>
+                    <div>
+                        <h3 class="text-cyber text-sm font-bold mb-2">COMPETE AND CLIMB</h3>
+                        <div class="flex items-start gap-2 text-xs text-[#8b8b8b] leading-relaxed">
+                            <i data-lucide="swords" class="w-4 h-4 shrink-0 text-purple-400 mt-0.5"></i>
+                            <p>Win matches, earn points, and climb the ladder.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="panel w-full max-w-2xl p-4 flex items-center justify-between cursor-pointer hover:bg-[#1a1a1a] mt-4">
+                <div class="flex items-center gap-4">
+                    <div class="w-10 h-10 bg-[#2a2015] rounded-full flex items-center justify-center">
+                        <i data-lucide="trophy" class="w-5 h-5 text-yellow-500"></i>
+                    </div>
+                    <div>
+                        <h3 class="text-cyber text-sm font-bold">VIEW LEADERBOARD</h3>
+                        <p class="text-[11px] text-[#8b8b8b]">See top players and rankings.</p>
+                    </div>
+                </div>
+                <i data-lucide="chevron-right" class="w-4 h-4 text-[#a19eb1]"></i>
+            </div>
+        </div>
+
+        <!-- VIEW 2: CAMERA CHECK MODAL -->
+        <div id="view-camera-check" class="view flex-col items-center w-full max-w-2xl mx-auto mt-2 hidden">
+            <h2 class="text-cyber text-3xl font-black mb-2 text-center">CAMERA ACCESS CHECK</h2>
+            <p class="text-cyber text-[10px] text-[#8b8b8b] mb-4 text-center">SHORT-LIVED SESSION CHALLENGE</p>
+
+            <div class="panel w-full p-6 flex flex-col items-center relative bg-[#0c0914] border-[#221a36]">
+                <div class="w-full aspect-[4/3] bg-[#050505] rounded-xl mb-4 relative viewfinder overflow-hidden shadow-[0_0_30px_rgba(0,0,0,0.8)] border border-white/5">
+                    <video id="webcam" class="w-full h-full object-cover transform -scale-x-100 absolute inset-0" autoplay playsinline muted></video>
+                    <canvas id="output_canvas" class="w-full h-full absolute inset-0 transform -scale-x-100 z-10"></canvas>
+                    
+                    <div class="absolute inset-0 z-20 pointer-events-none hidden" id="scanner-line">
+                        <div class="w-full h-[2px] bg-cyan-400 shadow-[0_0_20px_rgba(34,211,238,1)] animate-[scanDown_1.5s_ease-in-out_infinite_alternate]"></div>
+                    </div>
+
+                    <div class="absolute bottom-6 left-1/2 -translate-x-1/2 z-30 transition-all duration-300 transform" id="action-badge-container">
+                        <div id="action-badge" class="bg-black/80 backdrop-blur-md border border-white/20 text-white font-logo text-lg px-8 py-3 rounded-xl uppercase tracking-widest shadow-xl flex items-center gap-2">
+                            <i data-lucide="scan-face" class="w-5 h-5"></i> ALIGN FACE
+                        </div>
+                    </div>
+                    
+                    <div id="cam-status-text" class="absolute inset-0 flex items-center justify-center text-[#1a1a1a] font-logo text-4xl uppercase tracking-widest opacity-20 pointer-events-none z-0">
+                        LOADING AI...
+                    </div>
+                </div>
+
+                <div class="w-full h-1.5 bg-[#1a1a1a] rounded-full mb-6 overflow-hidden shadow-inner">
+                    <div id="progress-bar" class="h-full bg-gradient-to-r from-cyan-400 via-blue-500 to-purple-600 w-[0%] transition-all duration-500 ease-out"></div>
+                </div>
+
+                <div class="flex justify-between w-full mb-8 text-cyber text-[12px] font-bold text-[#4a4759] px-4">
+                    <span id="step-1" class="transition-colors duration-300">ALIGN</span>
+                    <span id="step-2" class="transition-colors duration-300">BLINK</span>
+                    <span id="step-3" class="transition-colors duration-300">TURN</span>
+                    <span id="step-4" class="transition-colors duration-300">DONE</span>
+                </div>
+
+                <button onclick="navigate('landing')" class="btn-exit font-logo text-sm px-10 py-2 hover:bg-red-900/40 hover:text-red-300 transition-colors">
+                    EXIT
+                </button>
+            </div>
+        </div>
+
+        <!-- VIEW 3: MENU / DASHBOARD -->
+        <div id="view-menu" class="view flex-col items-center w-full max-w-5xl mx-auto hidden">
+            <div class="flex flex-col items-center mb-10">
+                <div class="bg-[#111111] border border-[#222222] rounded-full px-6 py-2 flex items-center gap-2 mb-4 shadow-lg hover:border-white/20 transition-all">
+                    <span class="text-xs font-bold tracking-widest text-white uppercase">Mogger #3215</span>
+                    <span class="text-[10px] text-green-400">★</span>
+                    <span class="text-xs font-bold tracking-widest text-green-400">LTN</span>
+                    <span class="text-xs font-bold tracking-widest text-white"><span id="dashboard-elo">1000</span> ELO</span>
+                </div>
+                <div class="flex items-center gap-2 bg-[#0c1410] border border-[#162e22] px-3 py-1.5 rounded-full">
+                    <span class="dot-green"></span>
+                    <span id="online-count-2" class="text-[10px] font-bold tracking-widest text-white">1487 ONLINE</span>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 w-full mb-12">
+                <div onclick="startArenaMatch(false)" class="dash-card group relative overflow-hidden cursor-pointer">
+                    <i data-lucide="swords" class="w-10 h-10 text-[#a19eb1] mb-4 group-hover:text-white group-hover:scale-110 transition-all duration-300"></i>
+                    <h3 class="text-cyber text-lg font-black mb-1">1V1 ARENA</h3>
+                    <p class="text-[10px] text-[#8b8b8b] uppercase tracking-widest mb-4">RANKED MATCHMAKING</p>
+                    <div class="bg-[#0c1410] border border-[#162e22] px-2 py-1 rounded text-[8px] text-green-400 font-bold uppercase tracking-widest mt-auto group-hover:bg-[#112419] transition-colors">
+                        MOGGER #3215 ★ LTN <span id="card-elo">1000</span> ELO
+                    </div>
+                </div>
+                <div class="dash-card group cursor-not-allowed opacity-50">
+                    <i data-lucide="flask-conical" class="w-10 h-10 text-[#a19eb1] mb-4 transition-colors"></i>
+                    <h3 class="text-cyber text-lg font-black mb-1">THE LAB</h3>
+                    <p class="text-[10px] text-[#8b8b8b] uppercase tracking-widest">COMING SOON</p>
+                </div>
+                <div class="dash-card group cursor-not-allowed opacity-50">
+                    <i data-lucide="trophy" class="w-10 h-10 text-yellow-600 mb-4 transition-colors"></i>
+                    <h3 class="text-cyber text-lg font-black mb-1">GLOBAL RANK</h3>
+                    <p class="text-[10px] text-[#8b8b8b] uppercase tracking-widest">TOP 100 MOGGERS</p>
+                </div>
+                <div class="dash-card group cursor-pointer" onclick="generateRoomCode()">
+                    <i data-lucide="lock" class="w-10 h-10 text-yellow-600 mb-4 group-hover:text-yellow-400 group-hover:scale-110 transition-all duration-300"></i>
+                    <h3 class="text-cyber text-lg font-black mb-1">PRIVATE ROOM</h3>
+                    <p class="text-[10px] text-[#8b8b8b] uppercase tracking-widest mb-2">CLICK TO GENERATE CODE</p>
+                    
+                    <!-- Generate State (Hidden by default) -->
+                    <div id="private-room-generated" class="w-full flex flex-col gap-2 mt-auto relative z-10 hidden" onclick="event.stopPropagation()">
+                        <div class="flex items-center justify-center gap-1 w-full">
+                            <input id="generated-code" type="text" readonly class="bg-[#050505] border border-[#222222] text-xs font-mono font-bold px-2 py-1.5 rounded outline-none w-20 text-center text-cyan-400 cursor-text">
+                            <button onclick="copyRoomCode()" class="bg-[#1a1a1a] hover:bg-[#222] border border-[#333] text-white p-1.5 rounded transition-colors" title="Copy Code">
+                                <i data-lucide="copy" class="w-3.5 h-3.5"></i>
+                            </button>
+                        </div>
+                        <button onclick="joinPrivateRoom(true)" class="bg-[#162e22] hover:bg-[#1a3829] border border-[#1e3e2d] text-[#4ade80] text-[10px] font-bold py-1.5 rounded w-full transition-colors">START MATCH</button>
+                    </div>
+
+                    <!-- Join State (Visible by default) -->
+                    <div id="private-room-join" class="flex items-center gap-1 mt-auto relative z-10 w-full justify-center" onclick="event.stopPropagation()">
+                        <input id="room-code-input" type="text" placeholder="HAVE A CODE?" class="bg-[#000000] border border-[#222222] text-[10px] px-2 py-1.5 rounded outline-none w-[90px] text-center text-white focus:border-purple-500 transition-colors uppercase">
+                        <button onclick="joinPrivateRoom(false)" class="bg-[#3a1a2e] hover:bg-[#4d223e] border border-[#5a2a46] text-[#ff8ac8] text-[10px] font-bold px-2 py-1.5 rounded transition-colors">JOIN ></button>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="flex flex-wrap justify-center gap-4 mb-16">
+                <!-- Socials -->
+                <div class="bg-[#111111] border border-[#222222] rounded-xl px-4 py-3 flex items-center gap-3 hover:bg-[#1a1a1a] cursor-pointer transition shadow-md">
+                    <i data-lucide="music-2" class="w-4 h-4 text-white"></i>
+                    <div class="flex flex-col text-left">
+                        <span class="text-[8px] font-bold text-[#8b8b8b] uppercase tracking-widest leading-none">TIKTOK</span>
+                        <span class="text-xs font-bold text-white">Follow @kusaura</span>
+                    </div>
+                </div>
+                <div class="bg-[#111111] border border-[#222222] rounded-xl px-4 py-3 flex items-center gap-3 hover:bg-[#1a1a1a] cursor-pointer transition shadow-md">
+                    <i data-lucide="instagram" class="w-4 h-4 text-white"></i>
+                    <div class="flex flex-col text-left">
+                        <span class="text-[8px] font-bold text-[#8b8b8b] uppercase tracking-widest leading-none">INSTAGRAM</span>
+                        <span class="text-xs font-bold text-white">Follow @kusaura</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- VIEW 4: THE ARENA (LIVE BATTLE) -->
+        <div id="view-battle" class="view flex-col w-full h-[calc(100vh-48px)] absolute top-12 left-0 bg-[#050505] z-40 hidden p-2 md:p-4 gap-2">
+            <div class="flex flex-col lg:flex-row w-full h-full gap-2 relative">
+                
+                <!-- Left: Stranger Video -->
+                <div class="relative w-full h-1/2 lg:h-full lg:w-1/2 rounded-2xl overflow-hidden border border-white/10 bg-[#0a0a0a] shadow-2xl">
+                    <video id="arena-stranger-vid" class="w-full h-full object-cover" autoplay loop muted playsinline></video>
+                    <div class="absolute inset-0 bg-gradient-to-b from-black/60 via-transparent to-black/80 pointer-events-none"></div>
+                    
+                    <div class="absolute top-4 left-4 flex items-center gap-2 bg-black/60 backdrop-blur-md px-4 py-2 rounded-full border border-white/10">
+                        <span class="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span>
+                        <span class="text-sm font-bold text-white uppercase tracking-widest">Stranger</span>
+                        <span id="arena-stranger-elo" class="text-xs text-gray-400 ml-2">ELO: ???</span>
+                    </div>
+
+                    <div id="stranger-score-overlay" class="absolute inset-0 flex flex-col items-center justify-center bg-black/50 backdrop-blur-sm opacity-0 scale-90 transition-all duration-500 z-20">
+                        <div id="stranger-score" class="font-logo text-[120px] md:text-[150px] leading-none text-white drop-shadow-[0_0_40px_rgba(255,255,255,0.4)]">0.0</div>
+                        <div id="stranger-status" class="font-bold text-2xl tracking-[0.2em] uppercase mt-2"></div>
+                    </div>
+                </div>
+
+                <!-- VS Center Badge -->
+                <div class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-30 w-16 h-16 md:w-24 md:h-24 bg-[#0a0a0a] border-4 border-[#1a1a1a] rounded-full flex items-center justify-center shadow-[0_0_50px_rgba(0,0,0,1)]">
+                    <span class="font-logo font-black text-2xl md:text-4xl text-transparent bg-clip-text bg-gradient-to-br from-white to-gray-500 italic">VS</span>
+                </div>
+
+                <!-- Right: Local Video -->
+                <div class="relative w-full h-1/2 lg:h-full lg:w-1/2 rounded-2xl overflow-hidden border border-white/10 bg-[#0a0a0a] shadow-2xl">
+                    <video id="arena-local-vid" class="w-full h-full object-cover transform -scale-x-100" autoplay playsinline muted></video>
+                    
+                    <div class="absolute inset-0 bg-gradient-to-b from-black/60 via-transparent to-black/80 pointer-events-none"></div>
+                    
+                    <div class="absolute top-4 right-4 flex items-center gap-2 bg-black/60 backdrop-blur-md px-4 py-2 rounded-full border border-white/10 flex-row-reverse">
+                        <span class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
+                        <span class="text-sm font-bold text-white uppercase tracking-widest">You</span>
+                        <span id="arena-local-elo" class="text-xs text-gray-400 mr-2">ELO: 1000</span>
+                    </div>
+
+                    <div id="local-score-overlay" class="absolute inset-0 flex flex-col items-center justify-center bg-black/50 backdrop-blur-sm opacity-0 scale-90 transition-all duration-500 z-20">
+                        <div id="local-score" class="font-logo text-[120px] md:text-[150px] leading-none text-white drop-shadow-[0_0_40px_rgba(255,255,255,0.4)]">0.0</div>
+                        <div id="local-status" class="font-bold text-2xl tracking-[0.2em] uppercase mt-2"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Arena Controls -->
+            <div class="absolute bottom-6 left-1/2 -translate-x-1/2 z-40 flex items-center gap-4 bg-[#0a0a0a]/90 backdrop-blur-xl p-3 rounded-full border border-white/10 shadow-[0_10px_40px_rgba(0,0,0,0.5)]">
+                <button onclick="exitArena()" class="w-12 h-12 rounded-full hover:bg-white/10 flex items-center justify-center transition-colors text-[#a19eb1] hover:text-white">
+                    <i data-lucide="log-out" class="w-5 h-5"></i>
+                </button>
+                <button id="btn-next-match" onclick="startArenaMatch(false)" class="bg-white text-black font-logo font-bold px-8 py-3 rounded-full hover:scale-105 hover:bg-gray-200 transition-all text-sm uppercase tracking-widest flex items-center gap-2">
+                    <i data-lucide="skip-forward" class="w-4 h-4"></i> NEXT MATCH
+                </button>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- UI Overlay for Fake Notifications -->
+    <div id="toast-container" class="fixed top-20 right-4 z-[9999] flex flex-col gap-2"></div>
+
+    <script src="script.js"></script>
+</body>
+</html>

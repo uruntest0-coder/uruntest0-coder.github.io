@@ -1,0 +1,167 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+  --bg-dark: #050505;
+  --bg-gradient-top: #150a1f;
+  --panel-bg: #111111;
+  --border-light: rgba(255, 255, 255, 0.1);
+  --text-muted: #8b8b8b;
+  --accent-cyan: #00ffd5;
+  --accent-green: #00ff88;
+}
+
+body {
+  background-color: var(--bg-dark);
+  background-image: linear-gradient(180deg, var(--bg-gradient-top) 0%, var(--bg-dark) 40%);
+  color: #ffffff;
+  font-family: 'Inter', sans-serif;
+  overflow-x: hidden;
+}
+
+/* Typography tweaks */
+.font-logo {
+  font-family: 'Outfit', sans-serif;
+  font-weight: 900;
+  letter-spacing: -0.04em;
+}
+
+.text-cyber {
+  font-family: 'Outfit', sans-serif;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+/* Ommogle style panels */
+.panel {
+  background-color: var(--panel-bg);
+  border: 1px solid var(--border-light);
+  border-radius: 16px;
+  transition: all 0.2s ease;
+}
+
+.panel:hover {
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+/* Top bar style */
+.top-banner {
+  background: rgba(255, 255, 255, 0.03);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  font-family: monospace;
+}
+
+/* Claim Button */
+.btn-claim {
+  border: 1px solid rgba(255,255,255,0.2);
+  background: transparent;
+  color: white;
+  border-radius: 999px;
+  padding: 4px 16px;
+  font-size: 11px;
+  font-weight: bold;
+  letter-spacing: 1px;
+}
+
+.btn-claim:hover {
+  background: rgba(255,255,255,0.1);
+}
+
+/* Big Central Action Button */
+.btn-outline-cyan {
+  border: 1px solid #1a5c68;
+  color: #a4ebf3;
+  background: rgba(26, 92, 104, 0.1);
+  border-radius: 999px;
+  padding: 8px 24px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  transition: all 0.2s;
+}
+
+.btn-outline-cyan:hover {
+  background: rgba(26, 92, 104, 0.3);
+  border-color: #278899;
+}
+
+/* Status dots */
+.dot-green {
+  width: 6px;
+  height: 6px;
+  background-color: var(--accent-green);
+  border-radius: 50%;
+  display: inline-block;
+  box-shadow: 0 0 8px var(--accent-green);
+}
+
+/* View transitions */
+.view {
+  display: none;
+  opacity: 0;
+}
+
+.view.active {
+  display: flex;
+  opacity: 1;
+  animation: fadeIn 0.3s ease-out forwards;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Viewfinder Camera corners */
+.viewfinder {
+  position: relative;
+}
+.viewfinder::before, .viewfinder::after,
+.viewfinder-inner::before, .viewfinder-inner::after {
+  content: '';
+  position: absolute;
+  width: 20px;
+  height: 20px;
+  border-color: rgba(255,255,255,0.3);
+  border-style: solid;
+}
+
+.viewfinder::before { top: 16px; left: 16px; border-width: 2px 0 0 2px; }
+.viewfinder::after { top: 16px; right: 16px; border-width: 2px 2px 0 0; }
+.viewfinder-inner::before { bottom: 16px; left: 16px; border-width: 0 0 2px 2px; }
+.viewfinder-inner::after { bottom: 16px; right: 16px; border-width: 0 2px 2px 0; }
+
+/* Dashboard Cards */
+.dash-card {
+  background: linear-gradient(180deg, #181818 0%, #111111 100%);
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 20px;
+  padding: 32px 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.2s;
+  height: 220px;
+}
+
+.dash-card:hover {
+  transform: translateY(-4px);
+  border-color: rgba(255,255,255,0.15);
+  box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+}
+
+/* Exit/Cancel button */
+.btn-exit {
+  border: 1px solid #4a1c22;
+  color: #ff8a8a;
+  background: rgba(74, 28, 34, 0.2);
+  border-radius: 999px;
+  padding: 8px 32px;
+  font-weight: 700;
+  letter-spacing: 2px;
+}
