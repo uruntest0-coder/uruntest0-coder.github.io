@@ -1,74 +1,28 @@
-// Initialize Lucide icons
-lucide.createIcons();
-
 // ==========================================
-// SUPABASE & PEERJS INITIALIZATION
+// KUSAURA - CORE LOGIC
 // ==========================================
-const SUPABASE_URL = 'https://fumhnfdozcjzyvgwirne.supabase.co';
-const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ1bWhuZmRvemNqenl2Z3dpcm5lIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg5MjA1MjksImV4cCI6MjA5NDQ5NjUyOX0.pYr9dRij0B5weGjdgAtU9oKCv7wI1e4Z2jxq6gSbZws';
 
-const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-
-// Realtime channels
-const arenaChannel = supabase.channel('global_arena', { config: { broadcast: { self: false } } });
-
-let myPeerId = null;
-const peer = new Peer({ debug: 1 });
-
-peer.on('open', id => {
-    myPeerId = id;
-    console.log("My Peer ID:", myPeerId);
-});
-
-peer.on('error', err => {
-    console.error("PeerJS Error:", err);
-    showToast("CONNECTION ERROR", "error");
-});
-
-// Simple Router
-function navigate(viewId) {
-    document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
-    
-    if(viewId === 'battle') {
-        document.getElementById('view-battle').style.display = 'flex';
-        setTimeout(() => {
-            document.getElementById('view-battle').classList.add('active');
-            document.getElementById('view-battle').classList.remove('hidden');
-        }, 10);
-    } else {
-        document.getElementById('view-battle').classList.add('hidden');
-        document.getElementById('view-battle').classList.remove('active');
-        document.getElementById('view-battle').style.display = 'none';
-        
-        document.getElementById(`view-${viewId}`).classList.add('active');
-        document.getElementById(`view-${viewId}`).classList.remove('hidden');
-    }
-    
-    if (viewId === 'camera-check') startRealCameraCheck();
-    else stopCameraCheck();
-}
-
-// ==========================================
-// MOCK STATE & DYNAMIC DATA
-// ==========================================
+// Global state
 let myElo = 1000;
 let baseOnline = 1487;
+let isDev = window.location.protocol === 'file:';
 
-setInterval(() => {
-    let fluctuation = Math.floor(Math.random() * 11) - 5;
-    baseOnline += fluctuation;
-    if (baseOnline < 1400) baseOnline = 1400;
-    const text = `${baseOnline} ONLINE`;
-    if(document.getElementById('online-count-1')) document.getElementById('online-count-1').innerText = text;
-    if(document.getElementById('online-count-2')) document.getElementById('online-count-2').innerText = text;
-}, 3500);
+// Initialize UI
+document.addEventListener('DOMContentLoaded', () => {
+    try {
+        lucide.createIcons();
+    } catch(e) { console.error("Lucide error:", e); }
+});
 
+// Toast System
 function showToast(message, type="info") {
     const container = document.getElementById('toast-container');
+    if (!container) return;
     const toast = document.createElement('div');
     toast.className = `px-4 py-2 rounded shadow-lg text-xs font-bold uppercase tracking-widest text-white transform transition-all duration-300 translate-x-full ${type === 'error' ? 'bg-red-600' : 'bg-cyan-600'}`;
     toast.innerText = message;
     container.appendChild(toast);
+    
     requestAnimationFrame(() => toast.classList.remove('translate-x-full'));
     setTimeout(() => {
         toast.classList.add('translate-x-full');
@@ -78,111 +32,255 @@ function showToast(message, type="info") {
 }
 
 function updateUIElo() {
-    document.getElementById('dashboard-elo').innerText = myElo;
-    document.getElementById('card-elo').innerText = myElo;
-    document.getElementById('arena-local-elo').innerText = `ELO: ${myElo}`;
+    const els = ['dashboard-elo', 'card-elo', 'arena-local-elo'];
+    els.forEach(id => {
+        const el = document.getElementById(id);
+        if(el) {
+            if(id === 'arena-local-elo') el.innerText = `ELO: ${myElo}`;
+            else el.innerText = myElo;
+        }
+    });
+}
+
+// Dynamic Counter
+setInterval(() => {
+    baseOnline += Math.floor(Math.random() * 11) - 5;
+    if (baseOnline < 1400) baseOnline = 1400;
+    const text = `${baseOnline} ONLINE`;
+    ['online-count-1', 'online-count-2'].forEach(id => {
+        const el = document.getElementById(id);
+        if(el) el.innerText = text;
+    });
+}, 3500);
+
+// ==========================================
+// ROUTER
+// ==========================================
+window.navigate = function(viewId) {
+    console.log("Navigate called for:", viewId);
+    document.querySelectorAll('.view').forEach(v => {
+        v.classList.remove('active');
+        if (v.id === 'view-battle') {
+            v.style.display = 'none';
+        } else {
+            v.classList.add('hidden');
+        }
+    });
+    
+    const target = document.getElementById(`view-${viewId}`);
+    if (target) {
+        if (viewId === 'battle') {
+            target.style.display = 'flex';
+            setTimeout(() => target.classList.add('active'), 10);
+        } else {
+            target.classList.remove('hidden');
+            target.classList.add('active');
+        }
+    }
+    
+    if (viewId === 'camera-check') {
+        startRealCameraCheck();
+    } else {
+        stopCameraCheck();
+    }
 }
 
 // ==========================================
 // CAMERA CHECK LOGIC (MEDIAPIPE)
 // ==========================================
-let ccCamera = null, ccFaceMesh = null, ccStage = 0, ccBlinkState = false, ccBlinkCount = 0;
+let ccCamera = null, ccFaceMesh = null, ccStage = 0;
+let ccBlinkCount = 0, ccBlinkState = false;
 
 function stopCameraCheck() {
     if (ccCamera) { ccCamera.stop(); ccCamera = null; }
     const video = document.getElementById('webcam');
-    if (video && video.srcObject) { video.srcObject.getTracks().forEach(t => t.stop()); video.srcObject = null; }
+    if (video && video.srcObject) { 
+        video.srcObject.getTracks().forEach(t => t.stop()); 
+        video.srcObject = null; 
+    }
     if (ccFaceMesh) { ccFaceMesh.close(); ccFaceMesh = null; }
 }
 
 async function startRealCameraCheck() {
-    const video = document.getElementById('webcam'), canvas = document.getElementById('output_canvas');
-    const ctx = canvas.getContext('2d'), statusText = document.getElementById('cam-status-text');
-    const actionBadge = document.getElementById('action-badge'), progressBar = document.getElementById('progress-bar');
+    const video = document.getElementById('webcam');
+    const canvas = document.getElementById('output_canvas');
+    if (!video || !canvas) return;
     
-    ccStage = 1; ccBlinkCount = 0; progressBar.style.width = '0%';
+    const ctx = canvas.getContext('2d');
+    const statusText = document.getElementById('cam-status-text');
+    const actionBadge = document.getElementById('action-badge');
+    const progressBar = document.getElementById('progress-bar');
+    const scannerLine = document.getElementById('scanner-line');
+    
+    ccStage = 1; 
+    ccBlinkCount = 0; 
+    progressBar.style.width = '0%';
+    
+    // Reset Badge
     actionBadge.innerHTML = '<i data-lucide="scan-face" class="w-5 h-5"></i> ALIGN FACE';
+    actionBadge.className = "bg-black/80 backdrop-blur-md border border-white/20 text-white font-logo text-lg px-8 py-3 rounded-xl uppercase tracking-widest shadow-xl flex items-center gap-2";
     actionBadge.parentElement.classList.remove('hidden');
-    document.getElementById('scanner-line').classList.remove('hidden');
+    if(scannerLine) scannerLine.classList.remove('hidden');
     lucide.createIcons();
     
-    document.getElementById('step-1').className = 'text-cyan-400 drop-shadow-[0_0_8px_rgba(0,255,213,0.5)]';
-    ['2','3','4'].forEach(id => document.getElementById(`step-${id}`).className = 'text-[#4a4759]');
+    ['1','2','3','4'].forEach(id => {
+        const el = document.getElementById(`step-${id}`);
+        if(el) el.className = (id === '1') ? 'text-cyan-400 drop-shadow-[0_0_8px_rgba(0,255,213,0.5)]' : 'text-[#4a4759]';
+    });
     
-    statusText.innerText = "LOADING AI..."; statusText.style.display = 'flex';
+    statusText.innerText = "LOADING AI..."; 
+    statusText.style.display = 'flex';
 
-    ccFaceMesh = new FaceMesh({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`});
-    ccFaceMesh.setOptions({ maxNumFaces: 1, refineLandmarks: true, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
-    
-    let lastBadgeText = "";
-    function updateBadge(html) {
-        if (lastBadgeText !== html) {
-            actionBadge.innerHTML = html;
-            lucide.createIcons();
-            lastBadgeText = html;
-        }
+    try {
+        ccFaceMesh = new FaceMesh({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`});
+        ccFaceMesh.setOptions({ maxNumFaces: 1, refineLandmarks: true, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
+        
+        let lastText = "";
+        const setBadge = (text, isSuccess=false) => {
+            if (lastText !== text) {
+                actionBadge.innerHTML = text;
+                if(isSuccess) {
+                    actionBadge.classList.replace('bg-black/80', 'bg-green-600/90');
+                    actionBadge.classList.replace('border-white/20', 'border-green-400');
+                }
+                lucide.createIcons();
+                lastText = text;
+            }
+        };
+
+        ccFaceMesh.onResults((results) => {
+            statusText.style.display = 'none';
+            ctx.save(); 
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
+                const landmarks = results.multiFaceLandmarks[0];
+                
+                if (typeof FACEMESH_TESSELATION !== 'undefined') {
+                    drawConnectors(ctx, landmarks, FACEMESH_TESSELATION, {color: 'rgba(34, 211, 238, 0.15)', lineWidth: 0.5});
+                    drawConnectors(ctx, landmarks, FACEMESH_RIGHT_EYE, {color: '#22d3ee', lineWidth: 1});
+                    drawConnectors(ctx, landmarks, FACEMESH_LEFT_EYE, {color: '#22d3ee', lineWidth: 1});
+                }
+                
+                // Process Liveness
+                if (ccStage === 1) {
+                    setBadge('<i data-lucide="scan-face" class="w-5 h-5"></i> HOLD STILL');
+                    progressBar.style.width = '25%';
+                    ccStage = 1.5; // lock
+                    setTimeout(() => { 
+                        ccStage = 2; 
+                        document.getElementById('step-2').className = 'text-cyan-400 drop-shadow-[0_0_8px_rgba(0,255,213,0.5)]'; 
+                    }, 1500);
+                }
+                else if (ccStage === 2) {
+                    setBadge('<i data-lucide="eye" class="w-5 h-5"></i> BLINK NOW');
+                    progressBar.style.width = '50%';
+                    // Ear detection
+                    const lDist = Math.abs(landmarks[159].y - landmarks[145].y);
+                    const rDist = Math.abs(landmarks[386].y - landmarks[374].y);
+                    const isBlinking = (lDist < 0.01 && rDist < 0.01);
+                    if (isBlinking && !ccBlinkState) ccBlinkCount++;
+                    ccBlinkState = isBlinking;
+                    
+                    if (ccBlinkCount >= 1) { 
+                        ccStage = 3; 
+                        document.getElementById('step-3').className = 'text-cyan-400 drop-shadow-[0_0_8px_rgba(0,255,213,0.5)]'; 
+                    }
+                }
+                else if (ccStage === 3) {
+                    setBadge('<i data-lucide="refresh-cw" class="w-5 h-5"></i> TURN HEAD LEFT/RIGHT');
+                    progressBar.style.width = '75%';
+                    const nx = landmarks[1].x;
+                    if (nx < 0.40 || nx > 0.60) { 
+                        ccStage = 4; 
+                        document.getElementById('step-4').className = 'text-cyan-400 drop-shadow-[0_0_8px_rgba(0,255,213,0.5)]'; 
+                    }
+                }
+                else if (ccStage === 4) {
+                    setBadge('<i data-lucide="check-circle" class="w-5 h-5"></i> VERIFIED', true);
+                    progressBar.style.width = '100%'; 
+                    if(scannerLine) scannerLine.classList.add('hidden');
+                    ccStage = 5; 
+                    setTimeout(() => { navigate('menu'); }, 1500);
+                }
+                
+            } else {
+                setBadge('<i data-lucide="alert-triangle" class="w-5 h-5 text-red-500"></i> FACE NOT DETECTED');
+            }
+            ctx.restore();
+        });
+
+        ccCamera = new Camera(video, {
+            onFrame: async () => {
+                if(canvas.width !== video.videoWidth) { 
+                    canvas.width = video.videoWidth; 
+                    canvas.height = video.videoHeight; 
+                }
+                await ccFaceMesh.send({image: video});
+            }, 
+            width: 640, height: 480
+        });
+        
+        await ccCamera.start();
+        
+    } catch (e) { 
+        console.error("Camera Check Error:", e);
+        statusText.innerText = "CAMERA ERROR / BLOCKED"; 
     }
-
-    ccFaceMesh.onResults((results) => {
-        statusText.style.display = 'none';
-        ctx.save(); ctx.clearRect(0, 0, canvas.width, canvas.height);
-        if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
-            const landmarks = results.multiFaceLandmarks[0];
-            drawConnectors(ctx, landmarks, FACEMESH_TESSELATION, {color: 'rgba(34, 211, 238, 0.15)', lineWidth: 0.5});
-            drawConnectors(ctx, landmarks, FACEMESH_RIGHT_EYE, {color: '#22d3ee'});
-            drawConnectors(ctx, landmarks, FACEMESH_LEFT_EYE, {color: '#22d3ee'});
-            processLiveness(landmarks, updateBadge, progressBar);
-        } else {
-            updateBadge('<i data-lucide="alert-triangle" class="w-5 h-5 text-red-500"></i> FACE NOT DETECTED');
-        }
-        ctx.restore();
-    });
-
-    ccCamera = new Camera(video, {
-        onFrame: async () => {
-            if(canvas.width !== video.videoWidth) { canvas.width = video.videoWidth; canvas.height = video.videoHeight; }
-            await ccFaceMesh.send({image: video});
-        }, width: 640, height: 480
-    });
-    try { await ccCamera.start(); } catch (e) { statusText.innerText = "CAMERA ERROR"; }
 }
 
-let stage3Timer = null;
+// ==========================================
+// SUPABASE & MULTIPLAYER
+// ==========================================
+let supabase = null, arenaChannel = null, myPeerId = null, peer = null;
+const SUPABASE_URL = 'https://fumhnfdozcjzyvgwirne.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ1bWhuZmRvemNqenl2Z3dpcm5lIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg5MjA1MjksImV4cCI6MjA5NDQ5NjUyOX0.pYr9dRij0B5weGjdgAtU9oKCv7wI1e4Z2jxq6gSbZws';
 
-function processLiveness(landmarks, updateBadge, progressBar) {
-    if (ccStage === 1) {
-        updateBadge('<i data-lucide="scan-face" class="w-5 h-5"></i> HOLD STILL');
-        progressBar.style.width = '25%';
-        setTimeout(() => { if (ccStage === 1) { ccStage = 2; document.getElementById('step-2').className = 'text-cyan-400 drop-shadow-[0_0_8px_rgba(0,255,213,0.5)]'; } }, 1500);
-    }
-    else if (ccStage === 2) {
-        updateBadge('<i data-lucide="eye" class="w-5 h-5"></i> BLINK NOW');
-        progressBar.style.width = '50%';
-        const leftDist = Math.abs(landmarks[159].y - landmarks[145].y), rightDist = Math.abs(landmarks[386].y - landmarks[374].y);
-        const isBlinking = (leftDist < 0.012 && rightDist < 0.012);
-        if (isBlinking && !ccBlinkState) ccBlinkCount++;
-        ccBlinkState = isBlinking;
-        if (ccBlinkCount >= 1) { ccStage = 3; document.getElementById('step-3').className = 'text-cyan-400 drop-shadow-[0_0_8px_rgba(0,255,213,0.5)]'; }
-    }
-    else if (ccStage === 4) {
-        updateBadge('<i data-lucide="refresh-cw" class="w-5 h-5"></i> TURN HEAD LEFT/RIGHT');
-        progressBar.style.width = '75%';
-        const noseX = landmarks[1].x;
-        if (noseX < 0.40 || noseX > 0.60) { ccStage = 5; document.getElementById('step-4').className = 'text-cyan-400 drop-shadow-[0_0_8px_rgba(0,255,213,0.5)]'; }
-    }
-    else if (ccStage === 3) { 
-        if(!stage3Timer) {
-            stage3Timer = setTimeout(() => { if(ccStage === 3) ccStage = 4; stage3Timer = null; }, 500);
+// Try loading Supabase and PeerJS safely so it doesn't crash the whole app if blocked
+setTimeout(() => {
+    try {
+        if(window.supabase) {
+            supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+            arenaChannel = supabase.channel('global_arena', { config: { broadcast: { self: false } } });
         }
+        if(window.Peer) {
+            peer = new Peer({ debug: 1 });
+            peer.on('open', id => myPeerId = id);
+            peer.on('error', err => console.log("PeerJS Error:", err.type));
+            
+            // Handle incoming WebRTC Calls
+            peer.on('call', call => {
+                if (isSearching || currentPrivateChannel) {
+                    stopSearching();
+                    call.answer(arenaStream);
+                    currentCall = call;
+                    call.on('stream', remoteStream => {
+                        const vid = document.getElementById('arena-stranger-vid');
+                        if(vid) vid.srcObject = remoteStream;
+                        document.getElementById('arena-stranger-elo').innerText = "CONNECTED";
+                        startLiveMogScan();
+                    });
+                } else {
+                    call.close();
+                }
+            });
+            
+            peer.on('connection', conn => setupDataConnection(conn));
+            
+            // If Supabase loaded, listen for Matchmaking
+            if(arenaChannel) {
+                arenaChannel.on('broadcast', { event: 'find_match' }, ({ payload }) => {
+                    if (isSearching && myPeerId > payload.peerId) {
+                        connectToOpponent(payload.peerId);
+                    }
+                }).subscribe();
+            }
+        }
+    } catch(e) {
+        console.error("Multiplayer initialization failed:", e);
     }
-    else if (ccStage === 5) {
-        updateBadge('<i data-lucide="check-circle" class="w-5 h-5"></i> VERIFIED');
-        document.getElementById('action-badge').classList.replace('bg-black/80', 'bg-green-600/90'); 
-        document.getElementById('action-badge').classList.replace('border-white/20', 'border-green-400');
-        progressBar.style.width = '100%'; document.getElementById('scanner-line').classList.add('hidden');
-        ccStage = 6; setTimeout(() => { navigate('menu'); stopCameraCheck(); }, 1500);
-    }
-}
+}, 500);
+
 
 // ==========================================
 // PRIVATE ROOM LOGIC
@@ -192,14 +290,16 @@ let currentPrivateChannel = null;
 function generateRoomCode() {
     document.getElementById('private-room-join').classList.add('hidden');
     document.getElementById('private-room-generated').classList.remove('hidden');
-    const code = Math.random().toString(36).substring(2, 8).toUpperCase();
-    document.getElementById('generated-code').value = code;
+    document.getElementById('generated-code').value = Math.random().toString(36).substring(2, 8).toUpperCase();
 }
 
 function copyRoomCode() {
     const codeInput = document.getElementById('generated-code');
-    codeInput.select(); codeInput.setSelectionRange(0, 99999);
-    navigator.clipboard.writeText(codeInput.value).then(() => showToast("CODE COPIED TO CLIPBOARD")).catch(() => showToast("FAILED TO COPY", "error"));
+    codeInput.select(); 
+    codeInput.setSelectionRange(0, 99999);
+    navigator.clipboard.writeText(codeInput.value)
+        .then(() => showToast("CODE COPIED TO CLIPBOARD"))
+        .catch(() => showToast("FAILED TO COPY", "error"));
 }
 
 function joinPrivateRoom(isHost) {
@@ -208,58 +308,19 @@ function joinPrivateRoom(isHost) {
     if(!isHost) document.getElementById('room-code-input').value = '';
     
     showToast(`JOINING ROOM: ${code}`);
-    setTimeout(() => { startArenaMatch(true, code, isHost); }, 500);
+    setTimeout(() => startArenaMatch(true, code, isHost), 500);
 }
 
 // ==========================================
-// 1V1 ARENA (REAL MULTIPLAYER WEBRTC)
+// 1V1 ARENA
 // ==========================================
-let arenaStream = null;
-let isSearching = false;
-let arenaSearchInterval = null;
-let currentCall = null;
-let currentConn = null;
-let myArenaScore = null;
-let opponentArenaScore = null;
-
-// Listening for public arena matchmaking
-arenaChannel.on('broadcast', { event: 'find_match' }, ({ payload }) => {
-    if (isSearching) {
-        console.log("Found opponent in matchmaking:", payload.peerId);
-        // Tie-breaker to prevent both calling each other simultaneously
-        if (myPeerId > payload.peerId) {
-            connectToOpponent(payload.peerId);
-        }
-    }
-}).subscribe();
-
-// Handle incoming WebRTC Calls
-peer.on('call', call => {
-    if (isSearching || currentPrivateChannel) {
-        console.log("Answering incoming call from", call.peer);
-        stopSearching();
-        
-        call.answer(arenaStream);
-        currentCall = call;
-        
-        call.on('stream', remoteStream => {
-            document.getElementById('arena-stranger-vid').srcObject = remoteStream;
-            document.getElementById('arena-stranger-elo').innerText = "CONNECTED";
-            startLiveMogScan();
-        });
-    } else {
-        console.log("Busy, rejecting call");
-        call.close();
-    }
-});
-
-// Handle incoming Data Connection (for syncing scores)
-peer.on('connection', conn => {
-    setupDataConnection(conn);
-});
+let arenaStream = null, isSearching = false, arenaSearchInterval = null;
+let currentCall = null, currentConn = null, myArenaScore = null, opponentArenaScore = null;
 
 async function startArenaMatch(isPrivate = false, code = null, isHost = false) {
-    if(!myPeerId) { showToast("WAITING FOR PEER ID...", "error"); return; }
+    if(!peer || !supabase) { showToast("MULTIPLAYER OFFLINE", "error"); return; }
+    if(!myPeerId) { showToast("CONNECTING TO SERVER...", "error"); return; }
+    
     navigate('battle');
     resetArenaUI();
 
@@ -279,13 +340,9 @@ async function startArenaMatch(isPrivate = false, code = null, isHost = false) {
         currentPrivateChannel = supabase.channel(`room_${code}`, { config: { broadcast: { self: false } } });
         
         currentPrivateChannel.on('broadcast', {event: 'join_room'}, ({payload}) => {
-            if (isHost) {
-                console.log("Friend joined! Connecting to:", payload.peerId);
-                connectToOpponent(payload.peerId);
-            }
+            if (isHost) connectToOpponent(payload.peerId);
         }).subscribe((status) => {
             if (status === 'SUBSCRIBED' && !isHost) {
-                // Tell host I am here
                 currentPrivateChannel.send({type: 'broadcast', event: 'join_room', payload: {peerId: myPeerId}});
             }
         });
@@ -295,22 +352,18 @@ async function startArenaMatch(isPrivate = false, code = null, isHost = false) {
         arenaSearchInterval = setInterval(() => {
             if(isSearching) arenaChannel.send({ type: 'broadcast', event: 'find_match', payload: { peerId: myPeerId } });
         }, 2000);
-        // Trigger one immediately
         arenaChannel.send({ type: 'broadcast', event: 'find_match', payload: { peerId: myPeerId } });
     }
 }
 
 function connectToOpponent(opponentPeerId) {
     stopSearching();
-    console.log("Initiating call to", opponentPeerId);
-    
     const call = peer.call(opponentPeerId, arenaStream);
     currentCall = call;
     
     call.on('stream', remoteStream => {
         document.getElementById('arena-stranger-vid').srcObject = remoteStream;
         document.getElementById('arena-stranger-elo').innerText = "CONNECTED";
-        
         const conn = peer.connect(opponentPeerId);
         setupDataConnection(conn);
         startLiveMogScan();
@@ -322,7 +375,7 @@ function setupDataConnection(conn) {
     conn.on('data', data => {
         if (data.type === 'score') {
             opponentArenaScore = data.score;
-            checkMatchEnd();
+            if(myArenaScore && opponentArenaScore) finalizeMatch();
         }
     });
 }
@@ -330,44 +383,26 @@ function setupDataConnection(conn) {
 function startLiveMogScan() {
     myArenaScore = null;
     opponentArenaScore = null;
-    document.getElementById('btn-next-match').classList.add('hidden'); // Hide skip during scan
+    document.getElementById('btn-next-match').classList.add('hidden'); 
     
-    // Simulate AI scan taking 3 seconds, then generate a realistic score based on current Elo
     setTimeout(() => {
-        const base = (myElo / 200) + 2.0; // Dynamic base score based on ELO
-        myArenaScore = (base + (Math.random() * 1.5 - 0.5)).toFixed(1);
+        myArenaScore = ((myElo / 200) + 2.0 + (Math.random() * 1.5 - 0.5)).toFixed(1);
         if (myArenaScore > 10.0) myArenaScore = 9.9;
-        
         if (currentConn) currentConn.send({ type: 'score', score: myArenaScore });
-        checkMatchEnd();
+        if(myArenaScore && opponentArenaScore) finalizeMatch();
     }, 3000);
 }
 
-function checkMatchEnd() {
-    if (myArenaScore && opponentArenaScore) {
-        finalizeMatch();
-    }
-}
-
 function finalizeMatch() {
-    const sScore = parseFloat(opponentArenaScore);
-    const mScore = parseFloat(myArenaScore);
+    const sScore = parseFloat(opponentArenaScore), mScore = parseFloat(myArenaScore);
     const iWon = mScore > sScore;
 
-    // Apply Overlays
-    const sOverlay = document.getElementById('stranger-score-overlay');
-    const sScoreEl = document.getElementById('stranger-score');
-    const sStatus = document.getElementById('stranger-status');
-    const mOverlay = document.getElementById('local-score-overlay');
-    const mScoreEl = document.getElementById('local-score');
-    const mStatus = document.getElementById('local-status');
+    document.getElementById('stranger-score').innerText = sScore.toFixed(1);
+    document.getElementById('local-score').innerText = mScore.toFixed(1);
 
-    sScoreEl.innerText = sScore.toFixed(1);
-    mScoreEl.innerText = mScore.toFixed(1);
+    const expected = 1 / (1 + Math.pow(10, (1000 - myElo) / 400)); 
+    const sStatus = document.getElementById('stranger-status'), mStatus = document.getElementById('local-status');
 
-    // K-Factor 32 calculation
-    const expected = 1 / (1 + Math.pow(10, (1000 - myElo) / 400)); // Mocking opponent Elo as 1000 for now since we didn't sync Elos
-    
     if (iWon) {
         sStatus.innerText = "MOGGED"; sStatus.className = "font-bold text-2xl tracking-[0.2em] uppercase mt-2 text-red-500 drop-shadow-[0_0_10px_rgba(239,68,68,0.8)]";
         mStatus.innerText = "WINNER"; mStatus.className = "font-bold text-2xl tracking-[0.2em] uppercase mt-2 text-green-400 drop-shadow-[0_0_10px_rgba(74,222,128,0.8)]";
@@ -382,37 +417,28 @@ function finalizeMatch() {
     }
 
     updateUIElo();
-    sOverlay.style.opacity = '1'; sOverlay.style.transform = 'scale(1)';
-    mOverlay.style.opacity = '1'; mOverlay.style.transform = 'scale(1)';
-
+    document.getElementById('stranger-score-overlay').style.opacity = '1'; document.getElementById('stranger-score-overlay').style.transform = 'scale(1)';
+    document.getElementById('local-score-overlay').style.opacity = '1'; document.getElementById('local-score-overlay').style.transform = 'scale(1)';
+    
     document.getElementById('btn-next-match').innerHTML = '<i data-lucide="play" class="w-4 h-4"></i> NEXT MATCH';
     document.getElementById('btn-next-match').classList.remove('hidden');
     lucide.createIcons();
 }
 
-function stopSearching() {
-    isSearching = false;
-    clearInterval(arenaSearchInterval);
-}
+function stopSearching() { isSearching = false; clearInterval(arenaSearchInterval); }
 
 function exitArena() {
     stopSearching();
     if(currentCall) { currentCall.close(); currentCall = null; }
     if(currentConn) { currentConn.close(); currentConn = null; }
     if(currentPrivateChannel) { currentPrivateChannel.unsubscribe(); currentPrivateChannel = null; }
-    
-    if(arenaStream) {
-        arenaStream.getTracks().forEach(t => t.stop());
-        arenaStream = null;
-    }
+    if(arenaStream) { arenaStream.getTracks().forEach(t => t.stop()); arenaStream = null; }
     navigate('menu');
 }
 
 function resetArenaUI() {
-    const sOverlay = document.getElementById('stranger-score-overlay');
-    const mOverlay = document.getElementById('local-score-overlay');
-    sOverlay.style.opacity = '0'; sOverlay.style.transform = 'scale(0.9)';
-    mOverlay.style.opacity = '0'; mOverlay.style.transform = 'scale(0.9)';
+    document.getElementById('stranger-score-overlay').style.opacity = '0'; document.getElementById('stranger-score-overlay').style.transform = 'scale(0.9)';
+    document.getElementById('local-score-overlay').style.opacity = '0'; document.getElementById('local-score-overlay').style.transform = 'scale(0.9)';
     document.getElementById('arena-stranger-vid').srcObject = null;
     document.getElementById('btn-next-match').innerHTML = '<i data-lucide="x" class="w-4 h-4"></i> CANCEL SEARCH';
     document.getElementById('btn-next-match').classList.remove('hidden');
